@@ -29,10 +29,10 @@
 
 | ТЗ                                                                          | Ответственный | Текущий checkpoint              | Статус      | Блокеры                              | Последнее обновление |
 |-----------------------------------------------------------------------------|---------------|---------------------------------|-------------|--------------------------------------|----------------------|
-| `docs/specs/architecture/001.NIKITA_LEAD.ARCHITECTURE_CONTRACTS_V1.md`      | `NIKITA_LEAD` | `Network Contract Approved`     | `ON_REVIEW` | Нет                                  | 2026-05-27           |
+| `docs/specs/architecture/001.NIKITA_LEAD.ARCHITECTURE_CONTRACTS_V1.md`      | `NIKITA_LEAD` | `Team Sign-Off`                 | `IN_PROGRESS` | Ожидается финальное подтверждение от `NIKITA` и `SANYA` | 2026-05-27 |
 | `docs/specs/architecture/002.NIKITA_LEAD.CONTRACT_FIXTURE_STUB_WORKFLOW.md` | `NIKITA_LEAD` | `Artifacts Layout Approved`     | `PLANNED`   | Нет                                  | 2026-05-27           |
-| `docs/specs/db/001.NIKITA.SQLITE_SCHEMA_AND_SEED_MINIMAL.md`                | `NIKITA`      | `Schema Approved`               | `PLANNED`   | Нет                                  | 2026-05-27           |
-| `docs/specs/engine_cpp/001.SANYA.CPP_ENGINE_CORE_PYBIND_BASE.md`            | `SANYA`       | `Build Chain Approved`          | `PLANNED`   | Нет                                  | 2026-05-27           |
+| `docs/specs/db/001.NIKITA.SQLITE_SCHEMA_AND_SEED_MINIMAL.md`                | `NIKITA`      | `Schema Approved`               | `IN_PROGRESS` | Нет                                | 2026-05-27 |
+| `docs/specs/engine_cpp/001.SANYA.CPP_ENGINE_CORE_PYBIND_BASE.md`            | `SANYA`       | `Build Chain Approved`          | `IN_PROGRESS` | Нет                                | 2026-05-27 |
 | `docs/specs/server/001.NIKITA.SERVER_MATCH_JOIN_AND_TICK_LOOP.md`           | `NIKITA`      | `Join Flow Approved`            | `PLANNED`   | Зависит от контракта `v1`            | 2026-05-27           |
 | `docs/specs/client/001.NIKITA.CLIENT_PYGAME_CORE_AND_MATCH_UI.md`           | `NIKITA`      | `Lobby Flow Approved`           | `PLANNED`   | Зависит от server create/join API    | 2026-05-27           |
 | `docs/specs/gameplay/001.NIKITA_LEAD.VERTICAL_SLICE_PLAYABLE_MATCH_V1.md`   | `NIKITA_LEAD` | `Integration Baseline Approved` | `PLANNED`   | Зависит от client/server/db baseline | 2026-05-27           |
@@ -51,7 +51,8 @@
     - Зафиксированы модульные границы и owner-ы.
     - Зафиксированы контракты `TickInput`, `TickResult`, `PlayerAction`, `ServerEvent`, `StateSyncEvent`.
 - **В работе**:
-    - Приемка архитектурного `v1` и подтверждение от команды.
+    - Финальное подтверждение архитектурного `v1` от `NIKITA` и `SANYA`.
+    - Параллельный старт задач `db/001` и `engine_cpp/001`.
 - **Блокеры**:
     - Ожидается подтверждение контрактов от `NIKITA` и `SANYA`.
 - **Взаимная проверка кода**:
@@ -59,4 +60,5 @@
     - `SANYA -> NIKITA`: Проверить, что `simulate_tick` можно реализовать без неоднозначности полей.
     - `NIKITA_LEAD -> all`: Первичный контроль полноты контрактов выполнен.
 - **Решения/действия до следующего checkpoint**:
-    - После подтверждения перейти к `docs/specs/db/001...` и `docs/specs/engine_cpp/001...` параллельно.
+    - Выполнить первые checkpoints в `db/001` и `engine_cpp/001`.
+    - После этого провести TEAM-CP-002 и подготовить запуск `server/001`.
