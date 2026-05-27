@@ -88,3 +88,19 @@
 - **Связанные ТЗ**:
     - `docs/specs/gameplay/001.NIKITA_LEAD.VERTICAL_SLICE_PLAYABLE_MATCH_V1.md`
     - `docs/specs/architecture/002.NIKITA_LEAD.CONTRACT_FIXTURE_STUB_WORKFLOW.md`
+
+### DEC-005: Базовые контракты игры фиксируются в версии v1
+
+- **Дата**: 2026-05-27
+- **Статус**: Accepted
+- **Контекст**: запуск параллельной реализации server/client/db/engine требует стабильного интерфейса.
+- **Решение**: зафиксировать `ARCHITECTURE_V1` и `GAME_CONTRACTS_V1` как базу для первой волны разработки.
+- **Альтернативы**: развивать контракты "на лету" без версии.
+- **Последствия**:
+    - плюс: меньше интеграционных конфликтов;
+    - плюс: можно параллельно запускать `db` и `engine_cpp` задачи;
+    - минус: изменения обязательных полей теперь требуют перехода на `v2`.
+- **Связанные ТЗ**:
+    - `docs/specs/architecture/001.NIKITA_LEAD.ARCHITECTURE_CONTRACTS_V1.md`
+    - `docs/specs/db/001.NIKITA.SQLITE_SCHEMA_AND_SEED_MINIMAL.md`
+    - `docs/specs/engine_cpp/001.SANYA.CPP_ENGINE_CORE_PYBIND_BASE.md`
