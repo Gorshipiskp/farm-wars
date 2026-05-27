@@ -104,3 +104,36 @@
     - `docs/specs/architecture/001.NIKITA_LEAD.ARCHITECTURE_CONTRACTS_V1.md`
     - `docs/specs/db/001.NIKITA.SQLITE_SCHEMA_AND_SEED_MINIMAL.md`
     - `docs/specs/engine_cpp/001.SANYA.CPP_ENGINE_CORE_PYBIND_BASE.md`
+
+### DEC-006: Инструменты и окружение для engine_cpp (SANYA)
+
+- **Дата**: 2026-05-27
+- **Статус**: Accepted
+- **Контекст**: нужно зафиксировать конкретные версии инструментов для C++ сборки, чтобы избежать "на моей машине не собирается".
+- **Решение**:
+    - Компилятор: MSVC 2022 (Visual Studio 2022).
+    - Python: 3.13.
+    - pybind11: установка через `pip install pybind11`, интеграция через `find_package(pybind11)` в CMake.
+- **Альтернативы**: MinGW/MSYS2; vcpkg; FetchContent.
+- **Последствия**:
+    - плюс: pip-установка pybind11 проще для новичков, не требует ручного клонирования;
+    - минус: привязка к MSVC (пока Windows-only, это не проблема).
+- **Связанные ТЗ**:
+    - `docs/specs/engine_cpp/001.SANYA.CPP_ENGINE_CORE_PYBIND_BASE.md`
+
+### DEC-007: Создание shared/ DTO и engine_core_stub параллельно с C++ модулем
+
+- **Дата**: 2026-05-27
+- **Статус**: Accepted
+- **Контекст**: GAME_TECH_REQUIREMENTS.md требует stub для каждой зоны и общие DTO в shared/. Принято решение делать их сразу на CP1, а не откладывать.
+- **Решение**:
+    - `shared/` создается сразу с Python-классами для контрактов v1 (TickInput, TickResult, WorldState, etc.).
+    - `engine_core_stub` создается сразу как Python-заглушка, повторяющая интерфейс C++ модуля — для отладки NIKITA пока C++ модуль не готов.
+- **Альтернативы**: отложить до следующих checkpoint; обойтись без stub.
+- **Последствия**:
+    - плюс: NIKITA может сразу начинать server/client разработку на stub;
+    - плюс: контракты зафиксированы в коде, а не только в документах;
+    - минус: чуть больше начальной работы на CP1.
+- **Связанные ТЗ**:
+    - `docs/specs/engine_cpp/001.SANYA.CPP_ENGINE_CORE_PYBIND_BASE.md`
+    - `docs/specs/architecture/002.NIKITA_LEAD.CONTRACT_FIXTURE_STUB_WORKFLOW.md`

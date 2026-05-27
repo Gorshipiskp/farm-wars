@@ -1,0 +1,16 @@
+[
+    {
+        "contract_version": "v1",
+        "player_id": "p1",
+        "action_type": "WATER_PLANT",
+        "payload": {"tile_id": "t1"},
+        "client_ts": 1000
+    },
+    {
+        "contract_version": "v1",
+        "player_id": "p1",
+        "action_type": "START_RECIPE",
+        "payload": {"factory_id": "bakery_1", "recipe_id": "bread", "duration_sec": 30},
+        "client_ts": 2000
+    }
+]
