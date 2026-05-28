@@ -40,10 +40,26 @@ class SyncPoller:
                 self._stop.wait(self._interval)
                 continue
             try:
+                since = self._session.last_sync_tick
                 sync = self._client.poll_sync(
                     self._session.match_id,
-                    self._session.last_sync_tick,
+                    since,
                 )
+                if sync.get("events"):
+                    for ev in sync["events"]:
+                        et = ev.get("event_type")
+                        if et == "CONTRACT_ERROR":
+                            log.warning(
+                                "Sync CONTRACT_ERROR: %s",
+                                ev.get("payload"),
+                            )
+                    log.info(
+                        "Sync match=%s since_tick=%s tick=%s events=%s",
+                        self._session.match_id,
+                        since,
+                        sync.get("tick_id"),
+                        [e.get("event_type") for e in sync["events"]],
+                    )
                 self._session.apply_sync(sync)
                 self._session.clear_error()
             except ServerError as exc:

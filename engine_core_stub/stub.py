@@ -9,6 +9,9 @@ Python-заглушка для C++ модуля engine_core.
 """
 
 import copy
+import logging
+
+log = logging.getLogger("farm_wars.engine_stub")
 
 
 # ----- Валидация контракта v1 -----
@@ -113,6 +116,11 @@ def simulate_tick(input_dict):
     # Шаг 1: валидация
     validation_errors = validate_tick_input(input_dict)
     if validation_errors:
+        log.warning(
+            "TickInput validation failed tick=%s errors=%s",
+            tick_id,
+            [e.get("payload", {}).get("message") for e in validation_errors],
+        )
         empty_state = {
             "contract_version": "v1",
             "match_id": "error",
@@ -271,7 +279,17 @@ def simulate_tick(input_dict):
                             tick_id, "MISSING_FIELD",
                             f"No {plant_id} in inventory for player {player_id}"))
 
+        elif action_type in ("BUY_PRODUCT", "HARVEST_PLANT"):
+            log.debug(
+                "Ignoring server-only %s in engine stub: player=%s",
+                action_type, player_id,
+            )
+
         else:
+            log.warning(
+                "Unknown action_type=%s player=%s",
+                action_type, player_id,
+            )
             events.append(_make_error_event(tick_id, "INVALID_TYPE",
                                             f"Unknown action_type: {action_type}"))
 

@@ -63,6 +63,13 @@ class FarmWarsHandler(BaseHTTPRequestHandler):
                     if key not in data:
                         self._json_error(400, "MISSING_FIELD", f"{key} required")
                         return
+                action = data.get("action", {})
+                log.info(
+                    "POST /action match=%s player=%s type=%s",
+                    data.get("match_id"),
+                    data.get("player_id"),
+                    action.get("action_type"),
+                )
                 result = self.game_server.submit_action(data)
                 self._json_response(200, result)
                 return
@@ -95,10 +102,13 @@ class FarmWarsHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/health":
+            from server.match import SHOP_HANDLER_VERSION
+
             self._json_response(200, {
                 "contract_version": "v1",
                 "status": "ok",
                 "engine": self.game_server.engine_name,
+                "shop_handler": SHOP_HANDLER_VERSION,
             })
             return
 

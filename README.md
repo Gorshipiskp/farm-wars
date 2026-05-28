@@ -240,6 +240,7 @@ py tools/test_client_net.py    # нужен запущенный сервер
 - `client/001.NIKITA.CLIENT_PYGAME_CORE_AND_MATCH_UI.md`
 - `engine_cpp/002.SANYA.PLACE_ON_TILE.md`
 - `gameplay/001.NIKITA_LEAD.VERTICAL_SLICE_PLAYABLE_MATCH_V1.md`
+- `gameplay/003.NIKITA.PLAYABLE_FARM_LOOP_V2.md` — следующий шаг (`NIKITA`): магазин, рецепты из БД, HUD
 
 ---
 
@@ -254,10 +255,10 @@ py tools/test_client_net.py    # нужен запущенный сервер
 
 **Дальше:**
 
-1. Закрыть sign-off архитектуры `v1` (`NIKITA_LEAD`)
-2. Вертикальный срез end-to-end (`gameplay/001` — `NIKITA_LEAD`)
-3. Расширение симуляции в движке (`SANYA`, следующие action-типы)
-4. События / PvP из декларативной БД в геймплей
+1. `gameplay/003` — магазин, рецепты из БД, HUD (`NIKITA`) — ТЗ готово
+2. Sign-off `gameplay/001` + архитектуры v1 (`NIKITA_LEAD` + команда)
+3. Расширение движка (`SANYA`)
+4. События / PvP из декларативной БД
 
 ---
 

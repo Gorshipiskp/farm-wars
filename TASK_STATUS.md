@@ -38,6 +38,10 @@
 | `docs/specs/server/002.NIKITA.SERVER_ENRICH_PLACE_ON_TILE.md`               | `NIKITA`      | `Contracts Updated`             | `DONE`      | Нет                                  | 2026-05-28           |
 | `docs/specs/client/001.NIKITA.CLIENT_PYGAME_CORE_AND_MATCH_UI.md`           | `NIKITA`      | `UX Stability Approved`         | `DONE`      | Нет                                  | 2026-05-28           |
 | `docs/specs/gameplay/001.NIKITA_LEAD.VERTICAL_SLICE_PLAYABLE_MATCH_V1.md`   | `NIKITA_LEAD` | `Integration Baseline Approved` | `PLANNED`   | Baseline client/server/db готов; ждёт интеграционный sign-off | 2026-05-28           |
+| `docs/specs/gameplay/003.NIKITA.PLAYABLE_FARM_LOOP_V2.md`                   | `NIKITA`      | `Mini Loop Approved`            | `DONE`      | Нет                                  | 2026-05-28           |
+| `docs/specs/gameplay/004.NIKITA.HARVEST_AND_RECIPE_INGREDIENTS.md`          | `NIKITA`      | `Harvest + Ingredients Approved` | `DONE`      | Нет                                  | 2026-05-28           |
+| `docs/specs/engine_cpp/003.SANYA.PLANT_TICK_GROWTH_AND_ENGINE_MECHANICS.md` | `SANYA`       | `Growth Approved`               | `PLANNED`   | Ждёт обогащение payload (`server/003`) после CP1 | 2026-05-28 |
+| `docs/specs/server/003.NIKITA.SERVER_ENRICH_PLANT_GROWTH.md`                | `NIKITA`      | `Enrich Growth Fields`          | `PLANNED`   | После `engine_cpp/003` CP1           | 2026-05-28           |
 
 ---
 

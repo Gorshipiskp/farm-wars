@@ -25,6 +25,12 @@ class GameServer:
             interval = float(os.environ.get("FARM_WARS_TICK_SEC", "1.0"))
         self.tick_loop = TickLoop(self.registry, self.simulate_tick, interval)
         log.info("Simulation backend: %s", self.engine_name)
+        from server.match import SHOP_HANDLER_VERSION
+
+        log.info(
+            "Server handler=%s (BUY_PRODUCT/HARVEST_PLANT immediate, not sent to engine)",
+            SHOP_HANDLER_VERSION,
+        )
 
     def start_ticks(self) -> None:
         self.tick_loop.start()
@@ -51,6 +57,13 @@ class GameServer:
     def submit_action(self, envelope: dict) -> dict:
         match_id = envelope["match_id"]
         match = self.registry.get_match(match_id)
+        action = envelope.get("action", {})
+        log.debug(
+            "submit_action match=%s player=%s type=%s",
+            match_id,
+            envelope.get("player_id"),
+            action.get("action_type"),
+        )
         match.enqueue_action(envelope)
         return {"contract_version": "v1", "accepted": True}
 

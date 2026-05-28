@@ -30,6 +30,8 @@
 - `WATER_PLANT`
 - `START_RECIPE`
 - `PLACE_ON_TILE`
+- `BUY_PRODUCT` (server-only; не передаётся в C++ движок)
+- `HARVEST_PLANT` (server-only)
 
 ### `ServerEvent`
 
@@ -46,6 +48,29 @@
 - `RECIPE_FINISHED`
 - `MATCH_FINISHED`
 - `CONTRACT_ERROR`
+- `PRODUCT_PURCHASED`
+- `PURCHASE_FAILED`
+- `RECIPE_REJECTED`
+- `PLANT_HARVESTED`
+- `HARVEST_FAILED`
+
+### `BUY_PRODUCT` — payload (клиент → сервер)
+
+- `product_id: string` (required)
+- `amount: number` (required, >= 1)
+
+Обрабатывается на сервере до `simulate_tick`. Цена = `products.base_sell_price * amount`.
+
+### `START_RECIPE` — payload (клиент → сервер)
+
+Клиент отправляет: `{factory_id, recipe_id}`.
+
+Сервер добавляет перед `simulate_tick`:
+
+- `duration_sec: number` (из `recipes.production_time_sec` в SQLite)
+- при несовпадении `factory.factory_type` и `recipe.building_type` → `RECIPE_REJECTED`, действие не уходит в движок
+
+См. `docs/specs/gameplay/003.NIKITA.PLAYABLE_FARM_LOOP_V2.md`.
 
 ### `PLACE_ON_TILE` — payload для движка (после обогащения сервером)
 

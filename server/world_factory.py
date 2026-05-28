@@ -5,6 +5,7 @@ import json
 import os
 
 from db.loader import GameContentCatalog
+from server.plant_util import resolve_plant_id
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIXTURE_WORLD = os.path.join(ROOT, "fixtures", "world_state", "minimal_world.json")
@@ -50,7 +51,9 @@ def create_initial_world(
             tile_copy = copy.deepcopy(tile)
             tile_copy["tile_id"] = f"{prefix}_{tile['tile_id']}"
             tile_copy["owner_player_id"] = player_id
-            if tile_copy.get("occupant_id"):
+            if tile_copy.get("occupant_type") == "PLANT" and tile_copy.get("occupant_id"):
+                tile_copy["occupant_id"] = resolve_plant_id(tile_copy["occupant_id"])
+            elif tile_copy.get("occupant_id"):
                 tile_copy["occupant_id"] = f"{prefix}_{tile_copy['occupant_id']}"
             all_tiles.append(tile_copy)
 

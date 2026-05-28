@@ -23,7 +23,7 @@
         "zone_type": "PLANT",
         "owner_player_id": "p1",
         "occupant_type": "PLANT",
-        "occupant_id": "wheat_1",
+        "occupant_id": "wheat",
         "health": 100,
         "water_level": 30,
         "flags": []
@@ -33,7 +33,7 @@
         "zone_type": "PLANT",
         "owner_player_id": "p1",
         "occupant_type": "PLANT",
-        "occupant_id": "corn_1",
+        "occupant_id": "corn",
         "health": 100,
         "water_level": 10,
         "flags": []

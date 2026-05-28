@@ -1,14 +1,31 @@
 """In-memory match state: players, world, action queue, sync history."""
 
 import copy
+import logging
 import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
 
 from db.loader import GameContentCatalog
+
+log = logging.getLogger("farm_wars.server.match")
+
 from server.action_enricher import enrich_actions_for_tick
+from server.harvest import process_harvest_plant
+from server.shop import process_buy_product
 from server.world_factory import create_initial_world
+
+SERVER_ONLY_ACTIONS = frozenset({"BUY_PRODUCT", "HARVEST_PLANT"})
+# Bump when server-only actions change (visible in /api/health).
+SHOP_HANDLER_VERSION = "immediate_v3"
+
+
+def _action_type(action: dict) -> str:
+    raw = action.get("action_type")
+    if raw is None:
+        return ""
+    return str(raw).strip().upper()
 
 
 @dataclass
@@ -33,6 +50,7 @@ class Match:
         self.world_state: dict | None = None
         self.action_queue: deque[dict] = deque()
         self.sync_history: list[dict] = []
+        self._unacked_events: list[dict] = []
         self._lock = threading.Lock()
 
     def add_player(self, display_name: str) -> str:
@@ -67,7 +85,43 @@ class Match:
             player_id = envelope.get("player_id")
             if not any(p.player_id == player_id for p in self.players):
                 raise ValueError("UNKNOWN_PLAYER")
-            self.action_queue.append(envelope["action"])
+            action = envelope["action"]
+            action_type = _action_type(action)
+
+            if action_type == "BUY_PRODUCT":
+                self._handle_server_only_immediate(action, process_buy_product, "Shop")
+                return
+            if action_type == "HARVEST_PLANT":
+                self._handle_server_only_immediate(action, process_harvest_plant, "Harvest")
+                return
+
+            log.info(
+                "Action queued match=%s player=%s type=%s payload=%s",
+                self.match_id,
+                player_id,
+                action_type,
+                action.get("payload"),
+            )
+            self.action_queue.append(action)
+
+    def _handle_server_only_immediate(self, action: dict, processor, label: str) -> None:
+        """Run server-only action now; never queue for the engine."""
+        if self.world_state is None:
+            raise ValueError("NO_WORLD_STATE")
+        tick_id = self.world_state.get("tick_id", 0)
+        event = processor(action, self.world_state, self.catalog, tick_id)
+        events = [event] if event else []
+        log.info(
+            "%s immediate tick=%s player=%s -> %s",
+            label,
+            tick_id,
+            action.get("player_id"),
+            event.get("event_type") if event else "none",
+        )
+        if event and event.get("event_type") == "CONTRACT_ERROR":
+            log.warning("%s CONTRACT_ERROR: %s", label, event.get("payload"))
+        self._unacked_events.extend(events)
+        self._push_sync(events, bump_tick=False)
 
     def process_tick(self, simulate_tick) -> dict | None:
         """Run one simulation tick. Returns latest StateSyncEvent or None if not running."""
@@ -79,9 +133,45 @@ class Match:
             self.action_queue.clear()
 
             tick_id = self.world_state.get("tick_id", 0) + 1
+            server_events: list[dict] = []
+            engine_queue: list[dict] = []
+
+            for action in actions:
+                action_type = _action_type(action)
+                if action_type in SERVER_ONLY_ACTIONS:
+                    if action_type != action.get("action_type"):
+                        log.warning(
+                            "Normalized action_type %r -> %s",
+                            action.get("action_type"),
+                            action_type,
+                        )
+                if action_type in SERVER_ONLY_ACTIONS:
+                    processor = (
+                        process_buy_product
+                        if action_type == "BUY_PRODUCT"
+                        else process_harvest_plant
+                    )
+                    event = processor(action, self.world_state, self.catalog, tick_id)
+                    if event:
+                        server_events.append(event)
+                else:
+                    engine_queue.append(action)
+
             engine_actions, pre_events = enrich_actions_for_tick(
-                actions, self.catalog, tick_id
+                engine_queue, self.world_state, self.catalog, tick_id
             )
+            server_events.extend(pre_events)
+            before = len(engine_actions)
+            engine_actions = [
+                a for a in engine_actions
+                if _action_type(a) not in SERVER_ONLY_ACTIONS
+            ]
+            if before != len(engine_actions):
+                log.error(
+                    "Tick %s: stripped BUY_PRODUCT from engine queue (server-only action)",
+                    tick_id,
+                )
+
             tick_input = {
                 "contract_version": "v1",
                 "tick_id": tick_id,
@@ -91,7 +181,14 @@ class Match:
 
             result = simulate_tick(tick_input)
             self.world_state = result["next_world_state"]
-            events = pre_events + list(result.get("events", []))
+            events = server_events + list(result.get("events", []))
+            for ev in events:
+                if ev.get("event_type") == "CONTRACT_ERROR":
+                    log.warning(
+                        "Tick %s CONTRACT_ERROR: %s",
+                        tick_id,
+                        ev.get("payload"),
+                    )
 
             events.extend(self._advance_factories(tick_id))
             winner = self._check_win()
@@ -114,10 +211,15 @@ class Match:
         with self._lock:
             if not self.sync_history:
                 return None
-            for item in reversed(self.sync_history):
-                if item["tick_id"] >= since_tick:
-                    return copy.deepcopy(item)
-            return copy.deepcopy(self.sync_history[-1])
+            latest = self.sync_history[-1]
+            merged_events: list[dict] = list(self._unacked_events)
+            self._unacked_events.clear()
+            for item in self.sync_history:
+                if item["tick_id"] > since_tick:
+                    merged_events.extend(item["events"])
+            result = copy.deepcopy(latest)
+            result["events"] = merged_events
+            return result
 
     def _push_sync(
             self,

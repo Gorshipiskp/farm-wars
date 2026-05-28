@@ -413,6 +413,8 @@ py::dict simulate_tick(py::dict input) {
                 events.append(make_error_event(tick_id, "MISSING_FIELD", e.what()));
             }
 
+        } else if (action_type == "BUY_PRODUCT" || action_type == "HARVEST_PLANT") {
+            // Server-only — ignore if leaked into engine.
         } else {
             events.append(make_error_event(
                 tick_id, "INVALID_TYPE",

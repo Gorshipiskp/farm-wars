@@ -20,14 +20,12 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+from shared.log_config import setup_logging
 from server.game_server import GameServer
 from server.http_api import serve
 from server.network_util import guess_lan_ipv4
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
+setup_logging()
 log = logging.getLogger("farm_wars.server")
 
 

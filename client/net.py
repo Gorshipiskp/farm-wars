@@ -5,10 +5,13 @@ Does not modify server — talks to existing endpoints from server/http_api.py.
 """
 
 import json
+import logging
 import os
 import time
 import urllib.error
 import urllib.request
+
+log = logging.getLogger("farm_wars.client.net")
 
 DEFAULT_HOST = os.environ.get("FARM_WARS_SERVER_HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("FARM_WARS_SERVER_PORT", "8765"))
@@ -59,7 +62,16 @@ class ServerClient:
         self.timeout_sec = timeout_sec
 
     def health(self) -> dict:
-        return self._get("/api/health")
+        data = self._get("/api/health")
+        shop = data.get("shop_handler")
+        if shop:
+            log.info("Server health: engine=%s shop_handler=%s", data.get("engine"), shop)
+        elif shop is None and data.get("engine"):
+            log.warning(
+                "Server has no shop_handler in /api/health — old build? "
+                "Restart server from repo root: py -m server"
+            )
+        return data
 
     def create_match(self, player_name: str | None = None) -> dict:
         body = {}
@@ -81,6 +93,10 @@ class ServerClient:
         })
 
     def submit_action(self, match_id: str, player_id: str, action: dict) -> dict:
+        log.debug(
+            "submit_action match=%s player=%s type=%s",
+            match_id, player_id, action.get("action_type"),
+        )
         return self._post("/api/matches/action", {
             "contract_version": "v1",
             "match_id": match_id,
