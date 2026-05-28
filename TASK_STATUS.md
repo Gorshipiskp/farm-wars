@@ -35,7 +35,7 @@
 | `docs/specs/engine_cpp/001.SANYA.CPP_ENGINE_CORE_PYBIND_BASE.md`            | `SANYA`       | `Action Handling Approved`      | `DONE`      | Нет                                | 2026-05-27 |
 | `docs/specs/server/001.NIKITA.SERVER_MATCH_JOIN_AND_TICK_LOOP.md`           | `NIKITA`      | `Win Condition Approved`        | `DONE`      | Нет                                  | 2026-05-28           |
 | `docs/specs/client/001.NIKITA.CLIENT_PYGAME_CORE_AND_MATCH_UI.md`           | `NIKITA`      | `UX Stability Approved`         | `DONE`      | Нет                                  | 2026-05-28           |
-| `docs/specs/gameplay/001.NIKITA_LEAD.VERTICAL_SLICE_PLAYABLE_MATCH_V1.md`   | `NIKITA_LEAD` | `Integration Baseline Approved` | `PLANNED`   | Зависит от client/server/db baseline | 2026-05-27           |
+| `docs/specs/gameplay/001.NIKITA_LEAD.VERTICAL_SLICE_PLAYABLE_MATCH_V1.md`   | `NIKITA_LEAD` | `Integration Baseline Approved` | `PLANNED`   | Baseline client/server/db готов; ждёт интеграционный sign-off | 2026-05-28           |
 
 ---
 
@@ -62,3 +62,24 @@
 - **Решения/действия до следующего checkpoint**:
     - Выполнить первые checkpoints в `db/001` и `engine_cpp/001`.
     - После этого провести TEAM-CP-002 и подготовить запуск `server/001`.
+
+### TEAM-CP-002 (2026-05-28)
+
+- **Участники**: `NIKITA` (+ синхронизация для `SANYA`, `NIKITA_LEAD`)
+- **Сделано (`NIKITA`)**:
+    - `db/001` DONE: `schema.sql`, `seed_minimal.sql`, `loader.py`, `pricing.py`, `tools/init_db.py`.
+    - `server/001` DONE: HTTP API, join/tick/engine stub, win condition, `tools/test_server_flow.py`.
+    - `client/001` DONE: pygame lobby/match, 3 action types, sync poller, `tools/test_client_net.py`.
+    - LAN: сервер `0.0.0.0`, клиент — поля Server IP / Port, `--host`, env-переменные.
+    - Документация: `README.md`, `GAME_TECH_REQUIREMENTS.md`, ТЗ db/server/client, `DECISIONS.md`.
+- **В работе**:
+    - `architecture/001` — team sign-off контрактов v1.
+    - `gameplay/001` — формальный вертикальный срез (`NIKITA_LEAD`).
+- **Блокеры**:
+    - `PLACE_ON_TILE` не реализован в `engine_cpp` / stub (зона `SANYA`).
+- **Взаимная проверка**:
+    - `SANYA`: сверить, что server tick payload совместим с `simulate_tick`.
+    - `NIKITA_LEAD`: принять baseline для `gameplay/001`.
+- **Следующие шаги**:
+    - Ручной LAN-тест: host + guest, матч до `bread`.
+    - `SANYA`: `PLACE_ON_TILE` или расширение тика.

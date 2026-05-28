@@ -9,9 +9,9 @@ from db.loader import Building, GameContentCatalog, Product, Recipe
 
 
 def calculate_recipe_price(
-    recipe: Recipe,
-    products: dict[str, Product],
-    buildings: dict[str, Building],
+        recipe: Recipe,
+        products: dict[str, Product],
+        buildings: dict[str, Building],
 ) -> int:
     """
     Return sell price for a recipe output.
@@ -38,7 +38,7 @@ def calculate_recipe_price(
 
 
 def calculate_recipe_price_from_catalog(
-    recipe_id: str, catalog: GameContentCatalog
+        recipe_id: str, catalog: GameContentCatalog
 ) -> int:
     recipe = catalog.get_recipe(recipe_id)
     if recipe is None:

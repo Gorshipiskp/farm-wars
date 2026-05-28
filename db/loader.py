@@ -8,7 +8,6 @@ import os
 import sqlite3
 from dataclasses import dataclass, field
 
-
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_DB_PATH = os.path.join(ROOT, "db", "farm_wars.db")
 
@@ -183,8 +182,8 @@ def load_catalog(db_path: str | None = None) -> GameContentCatalog:
             rid: [] for rid in recipe_rows
         }
         for row in conn.execute(
-            "SELECT recipe_id, product_id, amount FROM recipe_ingredients "
-            "ORDER BY recipe_id, product_id"
+                "SELECT recipe_id, product_id, amount FROM recipe_ingredients "
+                "ORDER BY recipe_id, product_id"
         ):
             ingredients_by_recipe[row["recipe_id"]].append(
                 RecipeIngredient(product_id=row["product_id"], amount=row["amount"])

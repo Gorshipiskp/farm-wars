@@ -16,9 +16,9 @@ def _load_fixture_template() -> dict:
 
 
 def create_initial_world(
-    match_id: str,
-    players: list[tuple[str, str]],
-    catalog: GameContentCatalog,
+        match_id: str,
+        players: list[tuple[str, str]],
+        catalog: GameContentCatalog,
 ) -> dict:
     """
     players: list of (player_id, display_name)

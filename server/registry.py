@@ -5,7 +5,6 @@ import string
 import uuid
 
 from db.loader import GameContentCatalog
-
 from server.match import Match
 
 

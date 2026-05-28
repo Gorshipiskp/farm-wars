@@ -116,10 +116,10 @@ class Match:
             return copy.deepcopy(self.sync_history[-1])
 
     def _push_sync(
-        self,
-        events: list[dict],
-        bump_tick: bool,
-        tick_id: int | None = None,
+            self,
+            events: list[dict],
+            bump_tick: bool,
+            tick_id: int | None = None,
     ) -> dict:
         if self.world_state is None:
             raise ValueError("NO_WORLD_STATE")

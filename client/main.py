@@ -15,7 +15,6 @@ Requires: pip install -r client/requirements.txt
 import argparse
 import logging
 import os
-import sys
 
 import pygame
 

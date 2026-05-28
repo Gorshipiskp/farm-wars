@@ -4,7 +4,6 @@ import logging
 import os
 
 from db.loader import load_catalog
-
 from server.engine_adapter import get_simulate_tick
 from server.registry import MatchRegistry
 from server.tick_loop import TickLoop
@@ -14,9 +13,9 @@ log = logging.getLogger("farm_wars.server")
 
 class GameServer:
     def __init__(
-        self,
-        db_path: str | None = None,
-        tick_interval_sec: float | None = None,
+            self,
+            db_path: str | None = None,
+            tick_interval_sec: float | None = None,
     ):
         self.catalog = load_catalog(db_path)
         self.registry = MatchRegistry(self.catalog)

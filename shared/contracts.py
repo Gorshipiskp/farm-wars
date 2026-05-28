@@ -11,12 +11,13 @@
 
 class PlayerAction:
     """Действие игрока, которое клиент отправляет на сервер."""
+
     def __init__(self, player_id, action_type, payload, client_ts):
         self.contract_version = "v1"
-        self.player_id = player_id          # кто сделал
-        self.action_type = action_type      # например "WATER_PLANT"
-        self.payload = payload              # доп. данные действия (dict)
-        self.client_ts = client_ts          # unix время в миллисекундах
+        self.player_id = player_id  # кто сделал
+        self.action_type = action_type  # например "WATER_PLANT"
+        self.payload = payload  # доп. данные действия (dict)
+        self.client_ts = client_ts  # unix время в миллисекундах
 
     def to_dict(self):
         return {
@@ -39,11 +40,12 @@ class PlayerAction:
 
 class ServerEvent:
     """Событие, которое сервер рассылает клиентам после обработки тика."""
+
     def __init__(self, event_type, payload, server_tick):
         self.contract_version = "v1"
-        self.event_type = event_type        # например "PLANT_WATERED"
-        self.payload = payload              # dict с деталями
-        self.server_tick = server_tick      # на каком тике произошло
+        self.event_type = event_type  # например "PLANT_WATERED"
+        self.payload = payload  # dict с деталями
+        self.server_tick = server_tick  # на каком тике произошло
 
     def to_dict(self):
         return {
@@ -64,6 +66,7 @@ class ServerEvent:
 
 class InventoryItem:
     """Одна позиция в инвентаре игрока."""
+
     def __init__(self, product_id, amount):
         self.product_id = product_id
         self.amount = amount
@@ -78,17 +81,18 @@ class InventoryItem:
 
 class TileState:
     """Одна клетка игрового поля."""
+
     def __init__(self, tile_id, zone_type, owner_player_id,
                  occupant_type=None, occupant_id=None,
                  health=None, water_level=None, flags=None):
         self.tile_id = tile_id
-        self.zone_type = zone_type          # "PLANT" или "ANIMAL"
+        self.zone_type = zone_type  # "PLANT" или "ANIMAL"
         self.owner_player_id = owner_player_id
         self.occupant_type = occupant_type  # "PLANT", "ANIMAL" или None
         self.occupant_id = occupant_id
         self.health = health
         self.water_level = water_level
-        self.flags = flags or []            # например ["MINED"]
+        self.flags = flags or []  # например ["MINED"]
 
     def to_dict(self):
         result = {
@@ -124,6 +128,7 @@ class TileState:
 
 class MapState:
     """Игровое поле: размер и список клеток."""
+
     def __init__(self, width, height, tiles):
         self.width = width
         self.height = height
@@ -147,6 +152,7 @@ class MapState:
 
 class QueueItem:
     """Элемент очереди завода — рецепт, ожидающий запуска."""
+
     def __init__(self, recipe_id, requested_amount):
         self.recipe_id = recipe_id
         self.requested_amount = requested_amount
@@ -161,15 +167,16 @@ class QueueItem:
 
 class FactoryState:
     """Состояние одного завода (переработчика)."""
+
     def __init__(self, factory_id, factory_type, owner_player_id, level,
                  active_recipe_id, remaining_time_sec, queue):
         self.factory_id = factory_id
-        self.factory_type = factory_type            # например "BAKERY"
+        self.factory_type = factory_type  # например "BAKERY"
         self.owner_player_id = owner_player_id
-        self.level = level                          # >= 1
-        self.active_recipe_id = active_recipe_id    # None если простаивает
+        self.level = level  # >= 1
+        self.active_recipe_id = active_recipe_id  # None если простаивает
         self.remaining_time_sec = remaining_time_sec  # >= 0
-        self.queue = queue                          # список QueueItem
+        self.queue = queue  # список QueueItem
 
     def to_dict(self):
         return {
@@ -197,11 +204,12 @@ class FactoryState:
 
 class PlayerState:
     """Состояние одного игрока."""
+
     def __init__(self, player_id, display_name, money_bestiki, inventory, status_effects=None):
         self.player_id = player_id
         self.display_name = display_name
-        self.money_bestiki = money_bestiki    # количество валюты
-        self.inventory = inventory            # список InventoryItem
+        self.money_bestiki = money_bestiki  # количество валюты
+        self.inventory = inventory  # список InventoryItem
         self.status_effects = status_effects or []
 
     def to_dict(self):
@@ -228,10 +236,11 @@ class PlayerState:
 
 class WinConditionState:
     """Текущее состояние победного условия матча."""
+
     def __init__(self, condition_type, target_product_id, winner_player_id):
-        self.condition_type = condition_type            # "FIRST_PRODUCT"
-        self.target_product_id = target_product_id      # какой продукт нужен
-        self.winner_player_id = winner_player_id        # None пока нет победителя
+        self.condition_type = condition_type  # "FIRST_PRODUCT"
+        self.target_product_id = target_product_id  # какой продукт нужен
+        self.winner_player_id = winner_player_id  # None пока нет победителя
 
     def to_dict(self):
         return {
@@ -251,13 +260,14 @@ class WinConditionState:
 
 class WorldState:
     """Полное состояние игрового мира на конкретный тик."""
+
     def __init__(self, match_id, tick_id, players, game_map, factories, win_condition):
         self.contract_version = "v1"
         self.match_id = match_id
         self.tick_id = tick_id
-        self.players = players          # список PlayerState
-        self.map = game_map             # MapState
-        self.factories = factories      # список FactoryState
+        self.players = players  # список PlayerState
+        self.map = game_map  # MapState
+        self.factories = factories  # список FactoryState
         self.win_condition = win_condition  # WinConditionState
 
     def to_dict(self):
@@ -285,11 +295,12 @@ class WorldState:
 
 class TickInput:
     """Что Python-сервер передает в C++ движок на каждом тике."""
+
     def __init__(self, tick_id, world_state, actions):
         self.contract_version = "v1"
         self.tick_id = tick_id
-        self.world_state = world_state    # WorldState
-        self.actions = actions            # список PlayerAction
+        self.world_state = world_state  # WorldState
+        self.actions = actions  # список PlayerAction
 
     def to_dict(self):
         return {
@@ -310,11 +321,12 @@ class TickInput:
 
 class TickResult:
     """Что C++ движок возвращает Python-серверу после обработки тика."""
+
     def __init__(self, tick_id, next_world_state, events):
         self.contract_version = "v1"
         self.tick_id = tick_id
         self.next_world_state = next_world_state  # WorldState
-        self.events = events                      # список ServerEvent
+        self.events = events  # список ServerEvent
 
     def to_dict(self):
         return {
@@ -337,6 +349,7 @@ class TickResult:
 
 class CreateMatchResponse:
     """Ответ сервера на создание матча."""
+
     def __init__(self, match_id, join_code):
         self.contract_version = "v1"
         self.match_id = match_id
@@ -356,6 +369,7 @@ class CreateMatchResponse:
 
 class JoinMatchRequest:
     """Запрос клиента на вход в матч."""
+
     def __init__(self, join_code, player_name):
         self.contract_version = "v1"
         self.join_code = join_code
@@ -375,6 +389,7 @@ class JoinMatchRequest:
 
 class JoinMatchResponse:
     """Ответ сервера на вход в матч."""
+
     def __init__(self, match_id, player_id):
         self.contract_version = "v1"
         self.match_id = match_id
@@ -394,6 +409,7 @@ class JoinMatchResponse:
 
 class ClientActionEnvelope:
     """Конверт для отправки PlayerAction от клиента к серверу."""
+
     def __init__(self, match_id, player_id, action):
         self.contract_version = "v1"
         self.match_id = match_id
@@ -419,12 +435,13 @@ class ClientActionEnvelope:
 
 class StateSyncEvent:
     """Сервер рассылает клиентам новое состояние мира после тика."""
+
     def __init__(self, match_id, tick_id, world_state, events):
         self.contract_version = "v1"
         self.match_id = match_id
         self.tick_id = tick_id
-        self.world_state = world_state    # WorldState
-        self.events = events              # список ServerEvent
+        self.world_state = world_state  # WorldState
+        self.events = events  # список ServerEvent
 
     def to_dict(self):
         return {

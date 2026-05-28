@@ -154,6 +154,37 @@
     - минус: чуть больше шагов при кросс-зональных запросах.
 - **Связанные ТЗ**: все.
 
+### DEC-010: MVP-транспорт client↔server — HTTP JSON на фиксированном порту
+
+- **Дата**: 2026-05-28
+- **Статус**: Accepted
+- **Контекст**: нужен рабочий мультиплеер для учебного MVP без сложного стека.
+- **Решение**:
+    - Транспорт: `stdlib` HTTP (`ThreadingHTTPServer` на сервере, `urllib` на клиенте).
+    - Порт по умолчанию: `8765`.
+    - Сервер bind: `0.0.0.0` (LAN + localhost); клиент подключается по IP/hostname.
+    - Синхронизация: клиент poll `GET /api/matches/{id}/sync`; сервер authoritative tick loop.
+- **Альтернативы**: WebSocket; gRPC; peer-to-peer.
+- **Последствия**:
+    - плюс: простой отладочный MVP, без лишних зависимостей;
+    - минус: polling вместо push; не оптимально для продакшена.
+- **Связанные ТЗ**:
+    - `docs/specs/server/001.NIKITA.SERVER_MATCH_JOIN_AND_TICK_LOOP.md`
+    - `docs/specs/client/001.NIKITA.CLIENT_PYGAME_CORE_AND_MATCH_UI.md`
+
+### DEC-011: Формула цены рецепта — `time_coef` у каждого завода
+
+- **Дата**: 2026-05-28
+- **Статус**: Accepted
+- **Контекст**: в `GAME_TECH_REQUIREMENTS` цена зависит от времени производства; нужно уточнить, где хранить коэффициент.
+- **Решение**: `buildings.time_coef` per `building_type`; формула при `price_override IS NULL`:
+  `sum(ingredient.base_sell_price × amount) + production_time_sec × buildings.time_coef`.
+- **Альтернативы**: один глобальный `time_coef`; коэффициент в каждом рецепте.
+- **Последствия**:
+    - плюс: разные заводы балансируются независимо;
+    - минус: при добавлении завода нужен seed для `buildings`.
+- **Связанные ТЗ**: `docs/specs/db/001.NIKITA.SQLITE_SCHEMA_AND_SEED_MINIMAL.md`
+
 ### DEC-009: В команде новички — ИИ объясняет все простым языком
 
 - **Дата**: 2026-05-27

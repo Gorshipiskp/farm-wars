@@ -111,3 +111,21 @@ Checkpoint `Module Boundaries Approved` считается пройденным,
 - зафиксированы запреты и границы ответственности,
 - серверный тик-поток описан end-to-end,
 - команда подтверждает, что может начать реализацию без доп. архитектурных уточнений.
+
+---
+
+## 8) Реализация v1 (снимок 2026-05-28)
+
+Соответствие контрактам в коде:
+
+| Модуль | Entry / API | Контракты |
+|--------|-------------|-----------|
+| `client/` | `py -m client` → HTTP к серверу | `ClientActionEnvelope`, poll `StateSyncEvent` |
+| `server/` | `py -m server` → `server/http_api.py` | create/join/start/action/sync |
+| `server/` tick | `match.process_tick` → `engine_core` или stub | `TickInput`, `TickResult` |
+| `db/` | `load_catalog()` при старте сервера | декларативный контент |
+| `shared/` | `contracts.py` | зеркало `GAME_CONTRACTS_V1` |
+
+Сеть MVP: HTTP JSON, порт `8765`, сервер `0.0.0.0` (см. `DEC-010` в `DECISIONS.md`).
+
+Не в зоне v1-реализации: WebSocket, `PLACE_ON_TILE` в движке (ожидается `SANYA`).

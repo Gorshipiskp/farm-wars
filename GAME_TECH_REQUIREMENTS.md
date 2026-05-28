@@ -99,17 +99,19 @@ task specs) через ИИ-агента.
     - серверная логика матча и загрузки данных из БД,
     - SQLite схема и сидирование контента.
 
-### 4.3 Рекомендуемая модульная структура репозитория
+### 4.3 Модульная структура репозитория (фактическая, 2026-05-28)
 
-Пример целевой структуры:
-
-- `client/` — pygame UI, input, отрисовка, локальные экраны.
-- `server/` — лобби, матч, синхронизация состояния, join code.
-- `shared/` — общие DTO/схемы/enum-константы.
-- `db/` — schema SQL, seed SQL, доступ к SQLite.
-- `engine_cpp/` — C++ ядро, CMake, pybind11 биндинги.
-- `tools/` — скрипты запуска/сборки/проверки.
-- `docs/specs/` — все ТЗ по секциям и исполнителям.
+| Модуль | Owner | Ключевые артефакты |
+|--------|-------|-------------------|
+| `client/` | `NIKITA` | `main.py`, `net.py`, `sync_poller.py`, `requirements.txt` |
+| `server/` | `NIKITA` | `main.py`, `http_api.py`, `game_server.py`, `match.py`, `tick_loop.py` |
+| `db/` | `NIKITA` | `schema.sql`, `seed_minimal.sql`, `loader.py`, `pricing.py` |
+| `shared/` | `NIKITA_LEAD` | `contracts.py` |
+| `engine_cpp/` | `SANYA` | `simulate_tick.cpp`, `engine_core.cpp`, CMake |
+| `engine_core_stub/` | интеграция | `stub.py` (тот же API, что C++) |
+| `fixtures/` | общая | JSON для world/actions |
+| `tools/` | общая | `init_db.py`, `test_*`, `smoke_test.py` |
+| `docs/contracts/`, `docs/specs/` | `NIKITA_LEAD` | контракты и ТЗ |
 
 ### 4.4 Границы между Python и C++
 
@@ -159,16 +161,30 @@ C++ модуль отвечает за:
 - Сервер — авторитетный источник истины.
 - Клиенты отправляют команды (actions), не "готовое состояние".
 
-### 5.2 Join flow
+### 5.2 Join flow (реализовано)
 
-- Хост создает матч и получает `join code`.
-- Игроки подключаются по коду.
-- После старта матча сервер рассылает начальное состояние.
+- Хост: `POST /api/matches/create` → `match_id`, `join_code`.
+- Гости: `POST /api/matches/join` с `join_code` и `player_name`.
+- Хост: `POST /api/matches/start` → tick loop, начальный `StateSyncEvent`.
+- Игроки: `POST /api/matches/action` (`ClientActionEnvelope`).
+- Клиенты: poll `GET /api/matches/{match_id}/sync?since_tick=N`.
 
-### 5.3 Offline/Single mode
+### 5.3 Транспорт MVP (DEC-010)
 
-- Одиночный режим обязателен.
-- Разрешено использовать тот же серверный движок в локальном процессе.
+- Протокол: HTTP + JSON (`Content-Type: application/json`).
+- Сервер: `FARM_WARS_HOST` (default `0.0.0.0`), `FARM_WARS_PORT` (default `8765`).
+- Клиент: поля Server IP / Port в lobby, CLI `--host` / `--port`, env `FARM_WARS_SERVER*`.
+- Health-check: `GET /api/health`.
+
+### 5.4 Offline/Single mode
+
+- Одиночный режим: один клиент + локальный сервер (`127.0.0.1`), Create → Start без второго игрока.
+- Тот же server tick loop и `engine_core` / `engine_core_stub`.
+
+### 5.5 LAN multiplayer
+
+- Сервер на хосте слушает все интерфейсы; в лог выводится LAN IPv4 (`server/network_util.py`).
+- Гость указывает IP хоста в клиенте. Требуется открытый порт в брандмауэре Windows.
 
 ---
 
@@ -195,10 +211,11 @@ C++ модуль отвечает за:
 Поле цены в рецепте:
 
 - если `price_override` задан, используется он;
-- если `price_override` = `NULL`, применяется формула по умолчанию:
-    - `sum(cost(ingredients)) + production_time_sec * time_coef`.
+- если `price_override` = `NULL`, применяется формула по умолчанию (DEC-011):
+    - `sum(base_sell_price × amount) + production_time_sec × buildings.time_coef`,
+    - где `time_coef` берётся из завода рецепта (`recipes.building_type` → `buildings`).
 
-`time_coef` хранится декларативно в БД (глобально или по категории рецептов).
+Реализация: `db/pricing.py`, `calculate_recipe_price`.
 
 ### 6.4 Мультиплеер и рецепты
 
@@ -440,17 +457,17 @@ Data/API Contracts, Implementation Plan, Checkpoints, Acceptance Criteria, Test 
 
 ## 14) Приоритет реализации (roadmap MVP)
 
-Рекомендуемый порядок:
-
-1. Каркас проекта и запуск клиента/сервера.
-2. БД схема + сиды базового контента.
-3. Базовый цикл фермы в одиночном режиме.
-4. Заводы и рецепты.
-5. Базовый мультиплеер join-by-code.
-6. Случайные события.
-7. PvP-шалости и контрмеры.
-8. Условия победы и завершение матча.
-9. Полировка стабильности и UX.
+| # | Этап | Статус |
+|---|------|--------|
+| 1 | Каркас + контракты v1 | в основном готово |
+| 2 | БД schema + seed + loader | **готово** (`db/001`) |
+| 3 | C++ engine + stub | **готово** (`engine_cpp/001`) |
+| 4 | Server join/tick/win + HTTP | **готово** (`server/001`) |
+| 5 | Client lobby/match + LAN IP | **готово** (`client/001`) |
+| 6 | Вертикальный срез sign-off | `gameplay/001` |
+| 7 | `PLACE_ON_TILE` в движке | `SANYA` |
+| 8 | События / PvP в геймплее | декларативно в БД, логика впереди |
+| 9 | Полный контент + UX | впереди |
 
 ---
 

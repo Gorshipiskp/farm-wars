@@ -2,7 +2,6 @@
 
 import logging
 import threading
-import time
 
 from client.net import ServerClient, ServerError
 from client.session import ClientSession
@@ -12,10 +11,10 @@ log = logging.getLogger("farm_wars.client.sync")
 
 class SyncPoller:
     def __init__(
-        self,
-        client: ServerClient,
-        session: ClientSession,
-        interval_sec: float = 0.35,
+            self,
+            client: ServerClient,
+            session: ClientSession,
+            interval_sec: float = 0.35,
     ):
         self._client = client
         self._session = session

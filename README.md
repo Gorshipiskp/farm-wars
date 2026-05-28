@@ -124,55 +124,106 @@
 
 ---
 
-## Быстрый старт БД и сервера
+## Структура репозитория (реализовано)
 
-```bash
-py tools/init_db.py --seed
-py tools/verify_seed.py
-py tools/test_db_pricing.py
-py tools/test_server_flow.py
-py -m server
-```
+| Путь                | Зона                 | Содержимое                                                  |
+|---------------------|----------------------|-------------------------------------------------------------|
+| `client/`           | `NIKITA`             | pygame lobby/match, HTTP-клиент, poll `StateSync`           |
+| `server/`           | `NIKITA`             | HTTP API, матчи, tick loop, победа                          |
+| `db/`               | `NIKITA`             | `schema.sql`, `seed_minimal.sql`, `loader.py`, `pricing.py` |
+| `shared/`           | `NIKITA_LEAD`        | Python DTO контрактов v1                                    |
+| `engine_cpp/`       | `SANYA`              | C++ `simulate_tick` + pybind11                              |
+| `engine_core_stub/` | `SANYA` / интеграция | Python-заглушка движка                                      |
+| `fixtures/`         | общая                | `world_state/`, `actions/`                                  |
+| `tools/`            | общая                | `init_db.py`, smoke/integration-тесты                       |
 
-HTTP API (после `py -m server`, порт `8765`):
+---
 
-- `POST /api/matches/create` — создать матч (`player_name` опционально)
-- `POST /api/matches/join` — `{join_code, player_name}`
-- `POST /api/matches/start` — `{match_id}`
-- `POST /api/matches/action` — `ClientActionEnvelope`
-- `GET /api/matches/{match_id}/sync?since_tick=0` — `StateSyncEvent`
+## Быстрый старт
 
-Клиент (pygame, зона `NIKITA`):
+### 1. Один раз: БД и зависимости
 
 ```bash
 pip install -r client/requirements.txt
-py -m server
-py -m client
+py tools/init_db.py --seed
 ```
 
-Управление в матче: клик по клетке, `W` полив, `T` посадка (`PLACE_ON_TILE`), `B` запуск рецепта, `Esc` в lobby.
-
-### Мультиплеер по сети (LAN)
-
-**Хост (ПК с сервером):**
+### 2. Сервер
 
 ```bash
 py -m server
 ```
 
-Сервер слушает `0.0.0.0:8765`. В логе будет строка вида `Clients on your network: http://192.168.x.x:8765` — этот IP передать гостю.
+По умолчанию: `http://0.0.0.0:8765` (localhost + LAN). В логе — IP для гостей в сети.
 
-**Гость (другой ПК в той же сети):**
+### 3. Клиент
 
-- в lobby клиента: поле **Server IP** = IP хоста, **Port** = `8765`, кнопка **Connect**
-- или из терминала: `py -m client --host 192.168.x.x --port 8765`
+```bash
+py -m client
+```
+
+В lobby: **Server IP**, **Port**, **Connect**, затем Create/Join и (хост) Start.
+
+CLI для гостя в LAN: `py -m client --host 192.168.x.x --port 8765`
+
+### Автотесты (без pygame-окна)
+
+```bash
+py tools/verify_seed.py
+py tools/test_db_pricing.py
+py tools/test_server_flow.py
+py tools/test_client_net.py    # нужен запущенный сервер
+```
+
+---
+
+## HTTP API (контракт v1)
+
+Базовый URL: `http://<host>:8765`
+
+| Метод | Путь                                        | Назначение                               |
+|-------|---------------------------------------------|------------------------------------------|
+| GET   | `/api/health`                               | проверка сервера                         |
+| POST  | `/api/matches/create`                       | создать матч (`player_name` опционально) |
+| POST  | `/api/matches/join`                         | `{join_code, player_name}`               |
+| POST  | `/api/matches/start`                        | `{match_id}`                             |
+| POST  | `/api/matches/action`                       | `ClientActionEnvelope`                   |
+| GET   | `/api/matches/{match_id}/sync?since_tick=0` | `StateSyncEvent`                         |
+
+---
+
+## Управление в матче (клиент)
+
+- клик — выбор своей клетки
+- **W** — полив (`WATER_PLANT`)
+- **T** — посадка (`PLACE_ON_TILE`; в движке пока может быть ошибка — зона `SANYA`)
+- **B** — запуск рецепта победы на заводе (`START_RECIPE`)
+- **Esc** — вернуться в lobby
+
+Победа: первый игрок с целевым продуктом в инвентаре (в seed — `bread`).
+
+---
+
+## Мультиплеер по сети (LAN)
+
+| Роль  | Действие                                                                    |
+|-------|-----------------------------------------------------------------------------|
+| Хост  | `py -m server`, Create → Start, передать **join code** и **LAN IP** из лога |
+| Гость | `py -m client`, Server IP = IP хоста, Connect → Join                        |
 
 Переменные окружения:
 
-- сервер: `FARM_WARS_HOST` (по умолчанию `0.0.0.0`), `FARM_WARS_PORT`
-- клиент: `FARM_WARS_SERVER_HOST`, `FARM_WARS_SERVER_PORT` или полный URL в `FARM_WARS_SERVER`
+| Переменная              | Сторона         | По умолчанию                    |
+|-------------------------|-----------------|---------------------------------|
+| `FARM_WARS_HOST`        | сервер          | `0.0.0.0`                       |
+| `FARM_WARS_PORT`        | сервер / клиент | `8765`                          |
+| `FARM_WARS_TICK_SEC`    | сервер          | `1.0`                           |
+| `FARM_WARS_SERVER_HOST` | клиент          | `127.0.0.1`                     |
+| `FARM_WARS_SERVER_PORT` | клиент          | `8765`                          |
+| `FARM_WARS_SERVER`      | клиент          | полный URL (`http://host:port`) |
+| `FARM_WARS_DB_PATH`     | сервер          | `db/farm_wars.db`               |
 
-На хосте может понадобиться разрешить входящие подключения в брандмауэре Windows для Python на порту `8765`.
+На хосте: разрешить входящие подключения в брандмауэре Windows для Python на порту `8765`.
 
 ---
 
@@ -192,22 +243,29 @@ py -m server
 
 ## Текущий приоритет команды
 
-1. Закрыть архитектурные контракты `v1`.
-2. Поднять SQLite schema + seed minimal.
-3. Собрать C++ `engine_core` с `pybind11`.
-4. Реализовать server join/tick loop.
-5. Реализовать клиентский lobby + match UI.
-6. Собрать первый играбельный вертикальный срез до победы в матче.
+**Сделано (`NIKITA` / `SANYA`):**
+
+- SQLite schema + seed + загрузчик на сервере (`db/001` — DONE)
+- Server join/tick/win + HTTP API + LAN (`server/001` — DONE)
+- Client pygame lobby/match + IP в lobby (`client/001` — DONE)
+- C++ engine base + stub (`engine_cpp/001` — DONE)
+
+**Дальше:**
+
+1. Закрыть sign-off архитектуры `v1` (`NIKITA_LEAD`)
+2. Вертикальный срез end-to-end (`gameplay/001` — `NIKITA_LEAD`)
+3. `PLACE_ON_TILE` и расширение симуляции (`SANYA`)
+4. События / PvP из декларативной БД в геймплей
 
 ---
 
 ## Критерий готовности MVP
 
-MVP готов, если:
-
-- на Windows запускаются клиент и сервер,
-- доступны singleplayer и multiplayer (2+),
-- можно сыграть полный матч до победного условия,
-- работают базовые растения/животные/рецепты/заводы/события/саботажи/защиты,
-- контент загружается из SQLite,
-- задачи ведутся через ТЗ и checkpoints по стандартам проекта.
+| Критерий                                      | Статус                                       |
+|-----------------------------------------------|----------------------------------------------|
+| Клиент и сервер на Windows                    | есть                                         |
+| Multiplayer 2+ по join code (localhost + LAN) | есть                                         |
+| Матч до победы по целевому продукту           | есть (рецепт → инвентарь → `MATCH_FINISHED`) |
+| Контент из SQLite                             | есть (базовый seed)                          |
+| Полный контент (10 растений, PvP в матче)     | впереди                                      |
+| `PLACE_ON_TILE` в движке                      | впереди (`SANYA`)                            |

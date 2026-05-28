@@ -2,7 +2,6 @@
 
 import logging
 import threading
-import time
 
 log = logging.getLogger("farm_wars.server.tick")
 

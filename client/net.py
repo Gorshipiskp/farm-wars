@@ -10,7 +10,6 @@ import time
 import urllib.error
 import urllib.request
 
-
 DEFAULT_HOST = os.environ.get("FARM_WARS_SERVER_HOST", "127.0.0.1")
 DEFAULT_PORT = int(os.environ.get("FARM_WARS_SERVER_PORT", "8765"))
 DEFAULT_BASE = os.environ.get(
