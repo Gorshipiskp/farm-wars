@@ -12,13 +12,12 @@ from db.loader import GameContentCatalog
 log = logging.getLogger("farm_wars.server.match")
 
 from server.action_enricher import enrich_actions_for_tick
-from server.harvest import process_harvest_plant
 from server.shop import process_buy_product
 from server.world_factory import create_initial_world
 
-SERVER_ONLY_ACTIONS = frozenset({"BUY_PRODUCT", "HARVEST_PLANT"})
+SERVER_ONLY_ACTIONS = frozenset({"BUY_PRODUCT"})
 # Bump when server-only actions change (visible in /api/health).
-SHOP_HANDLER_VERSION = "immediate_v3"
+SHOP_HANDLER_VERSION = "immediate_v4"
 
 
 def _action_type(action: dict) -> str:
@@ -91,9 +90,6 @@ class Match:
             if action_type == "BUY_PRODUCT":
                 self._handle_server_only_immediate(action, process_buy_product, "Shop")
                 return
-            if action_type == "HARVEST_PLANT":
-                self._handle_server_only_immediate(action, process_harvest_plant, "Harvest")
-                return
 
             log.info(
                 "Action queued match=%s player=%s type=%s payload=%s",
@@ -146,12 +142,7 @@ class Match:
                             action_type,
                         )
                 if action_type in SERVER_ONLY_ACTIONS:
-                    processor = (
-                        process_buy_product
-                        if action_type == "BUY_PRODUCT"
-                        else process_harvest_plant
-                    )
-                    event = processor(action, self.world_state, self.catalog, tick_id)
+                    event = process_buy_product(action, self.world_state, self.catalog, tick_id)
                     if event:
                         server_events.append(event)
                 else:
@@ -190,7 +181,6 @@ class Match:
                         ev.get("payload"),
                     )
 
-            events.extend(self._advance_factories(tick_id))
             winner = self._check_win()
             if winner:
                 events.append({
@@ -244,56 +234,6 @@ class Match:
         self.sync_history.append(sync)
         return sync
 
-    def _advance_factories(self, tick_id: int) -> list[dict]:
-        events = []
-        if self.world_state is None:
-            return events
-
-        for factory in self.world_state.get("factories", []):
-            recipe_id = factory.get("active_recipe_id")
-            remaining = factory.get("remaining_time_sec", 0)
-            if not recipe_id or remaining <= 0:
-                continue
-
-            factory["remaining_time_sec"] = max(0, remaining - 1)
-            if factory["remaining_time_sec"] > 0:
-                continue
-
-            recipe = self.catalog.get_recipe(recipe_id)
-            if recipe is None:
-                continue
-
-            owner_id = factory["owner_player_id"]
-            self._add_inventory(owner_id, recipe.output_product_id, 1)
-            factory["active_recipe_id"] = None
-
-            events.append({
-                "contract_version": "v1",
-                "event_type": "RECIPE_FINISHED",
-                "server_tick": tick_id,
-                "payload": {
-                    "factory_id": factory["factory_id"],
-                    "recipe_id": recipe_id,
-                    "product_id": recipe.output_product_id,
-                    "player_id": owner_id,
-                },
-            })
-
-        return events
-
-    def _add_inventory(self, player_id: str, product_id: str, amount: int) -> None:
-        for player in self.world_state.get("players", []):
-            if player["player_id"] != player_id:
-                continue
-            for item in player.get("inventory", []):
-                if item["product_id"] == product_id:
-                    item["amount"] += amount
-                    return
-            player.setdefault("inventory", []).append({
-                "product_id": product_id,
-                "amount": amount,
-            })
-            return
 
     def _check_win(self) -> str | None:
         if self.world_state is None:

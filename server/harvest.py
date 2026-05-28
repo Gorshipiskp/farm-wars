@@ -57,7 +57,6 @@ def process_harvest_plant(
     tile["occupant_type"] = "EMPTY"
     tile["occupant_id"] = None
     tile["health"] = None
-    tile["water_level"] = None
 
     log.info(
         "HARVEST ok player=%s tile=%s product=%s x%d",

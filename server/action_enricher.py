@@ -46,7 +46,7 @@ def enrich_actions_for_tick(
                 continue
             enriched.append(action_copy)
 
-        elif action_type in ("BUY_PRODUCT", "HARVEST_PLANT"):
+        elif action_type == "BUY_PRODUCT":
             log.error(
                 "%s reached enricher (should be server-only): %s",
                 action_type,
@@ -80,6 +80,8 @@ def _enrich_place_on_tile(action: dict, catalog: GameContentCatalog, tick_id: in
 
     payload["initial_health"] = DEFAULT_PLANT_HEALTH
     payload["initial_water_level"] = plant.initial_water_level
+    payload["growth_time_sec"] = plant.growth_time_sec
+    payload["water_decay_per_tick"] = plant.water_decay_per_tick
     return None
 
 
@@ -132,7 +134,25 @@ def _enrich_start_recipe(
             "NOT_ENOUGH_INGREDIENTS",
         )
 
+    if factory.get("active_recipe_id"):
+        queue = factory.setdefault("queue", [])
+        queue.append({
+            "recipe_id": recipe_id,
+            "duration_sec": recipe.production_time_sec,
+        })
+        return {
+            "contract_version": "v1",
+            "event_type": "RECIPE_QUEUED",
+            "server_tick": tick_id,
+            "payload": {
+                "player_id": action["player_id"],
+                "factory_id": factory_id,
+                "recipe_id": recipe_id,
+            },
+        }
+
     payload["duration_sec"] = recipe.production_time_sec
+    payload["output_product_id"] = recipe.output_product_id
     return None
 
 

@@ -133,7 +133,7 @@ class FarmWarsApp:
             base = self._refresh_net_client()
             health = self.net.health()
             shop = health.get("shop_handler")
-            if shop not in ("immediate_v3", "immediate_v2"):
+            if shop not in ("immediate_v4", "immediate_v3", "immediate_v2"):
                 self.status_msg = "Сервер устарел — перезапусти: py -m server"
                 self.toasts.push(self.status_msg, "error")
                 return False
@@ -446,7 +446,7 @@ class FarmWarsApp:
         if not factory:
             self.toasts.push("Нет пекарни", "warn")
             return
-        recipe = world.get("win_condition", {}).get("target_product_id", "bread")
+        recipe = "bread"
         self._send_action(
             "START_RECIPE",
             {"factory_id": factory["factory_id"], "recipe_id": recipe},
@@ -486,6 +486,8 @@ class FarmWarsApp:
                 btn.enabled = not finished
                 btn.draw(screen, fonts, mouse)
 
+            self._draw_bakery_status(world, fonts)
+
             self._draw_sidebar(world, tick, events, player, mouse, finished)
         else:
             screen.blit(fonts["body"].render("Загружаем поле…", True, ui.TEXT_ON_DARK), (ui.FARM_X, ui.FARM_Y))
@@ -516,6 +518,13 @@ class FarmWarsApp:
                 label = ui.crop_label(tile.get("occupant_id"))
                 surf = fonts["small"].render(label, True, ui.TEXT_ON_DARK)
                 screen.blit(surf, surf.get_rect(midtop=(rect.centerx, rect.y + 10)))
+                growth_elapsed = tile.get("growth_elapsed_sec") or 0
+                growth_needed = tile.get("growth_time_sec") or 0
+                if growth_needed > 0:
+                    ratio = min(1.0, growth_elapsed / growth_needed)
+                    bar = pygame.Rect(rect.x + 8, rect.bottom - 28, rect.w - 16, 8)
+                    bar_color = ui.GROWTH_READY if ratio >= 1.0 else ui.GROWTH
+                    ui.draw_progress_bar(screen, bar, ratio, bar_color)
                 water = tile.get("water_level")
                 if water is not None:
                     ratio = min(1.0, water / 100.0)
@@ -524,6 +533,34 @@ class FarmWarsApp:
                     ui.draw_progress_bar(screen, bar, ratio, bar_color)
             else:
                 screen.blit(fonts["small"].render("пусто", True, ui.TEXT_SOFT), (rect.x + 24, rect.y + 30))
+
+    def _draw_bakery_status(self, world, fonts):
+        screen = self.screen
+        pid = self.session.player_id
+        factory = next((f for f in world.get("factories", []) if f.get("owner_player_id") == pid), None)
+        if not factory:
+            return
+        x = ui.FARM_X
+        y = 498
+        active = factory.get("active_recipe_id")
+        rem = factory.get("remaining_time_sec", 0)
+        queue = factory.get("queue", [])
+        if active:
+            text = f"Пекарня: {ui.product_label(active)} — {rem} сек"
+            color = ui.ACCENT
+        elif queue:
+            text = f"Пекарня: очередь из {len(queue)}"
+            color = ui.WARN
+        else:
+            text = "Пекарня: свободна"
+            color = ui.TEXT_SOFT
+        surf = fonts["small"].render(text, True, color)
+        screen.blit(surf, (x, y))
+        if queue and not active:
+            qnames = ", ".join(ui.product_label(q.get("recipe_id", "?")) for q in queue[:2])
+            if len(queue) > 2:
+                qnames += f" +{len(queue) - 2}"
+            screen.blit(fonts["small"].render(qnames, True, ui.TEXT_SOFT), (x, y + 18))
 
     def _draw_sidebar(self, world, tick, events, player, mouse, finished):
         screen = self.screen
@@ -575,17 +612,38 @@ class FarmWarsApp:
             active = f.get("active_recipe_id")
             rem = f.get("remaining_time_sec", 0)
             if active:
+                label = f"  ▸ {ui.product_label(active)}"
+                screen.blit(fonts["small"].render(label, True, ui.ACCENT), (x, y))
+                timer_text = f"{rem} сек"
+                timer_w = fonts["small"].size(timer_text)[0]
                 screen.blit(
-                    fonts["small"].render(f"  {ui.product_label(active)} — {rem} сек", True, ui.TEXT),
-                    (x, y),
+                    fonts["small"].render(timer_text, True, ui.TEXT),
+                    (x + rect.w - 32 - timer_w, y),
                 )
                 y += 18
-                bar = pygame.Rect(x, y, rect.w - 32, 10)
-                ui.draw_progress_bar(screen, bar, 1 - rem / 30.0 if rem <= 30 else 0, ui.ACCENT)
-                y += 18
+                bar = pygame.Rect(x, y, rect.w - 32, 6)
+                ui.draw_progress_bar(screen, bar, min(1.0, rem / 60.0), ui.ACCENT)
+                y += 16
             else:
                 screen.blit(fonts["small"].render("  простаивает", True, ui.TEXT_SOFT), (x, y))
                 y += 20
+
+            queue = f.get("queue", [])
+            if queue:
+                screen.blit(fonts["small"].render("  В очереди:", True, ui.TEXT_SOFT), (x, y))
+                y += 18
+                for qi, qitem in enumerate(queue[:3]):
+                    qname = ui.product_label(qitem.get("recipe_id", "?"))
+                    qdur = qitem.get("duration_sec", "?")
+                    qline = f"    {qi + 1}. {qname} ({qdur}с)"
+                    screen.blit(fonts["small"].render(qline, True, ui.TEXT), (x, y))
+                    y += 18
+                if len(queue) > 3:
+                    screen.blit(
+                        fonts["small"].render(f"    и ещё {len(queue) - 3}…", True, ui.TEXT_SOFT),
+                        (x, y),
+                    )
+                    y += 18
         y += 10
 
         screen.blit(fonts["body"].render("Магазин:", True, ui.TEXT), (x, y))
@@ -599,14 +657,16 @@ class FarmWarsApp:
             btn.draw(screen, fonts, mouse, money >= price)
             y += 36
 
-        feed_y = min(y + 8, rect.bottom - 100)
-        screen.blit(fonts["small"].render("Последние новости:", True, ui.TEXT_SOFT), (x, feed_y))
-        feed_y += 20
-        for ev in events[-4:]:
+        feed_y = rect.bottom - 20
+        visible = events[-4:]
+        for ev in reversed(visible):
             msg = ui.humanize_event(ev)
             if msg:
-                screen.blit(fonts["small"].render(f"· {msg[:42]}", True, ui.TEXT), (x, feed_y))
-                feed_y += 18
+                feed_y -= 18
+                screen.blit(fonts["small"].render(f"· {msg[:48]}", True, ui.TEXT), (x, feed_y))
+        if visible:
+            feed_y -= 24
+            screen.blit(fonts["small"].render("Последние новости:", True, ui.TEXT_SOFT), (x, feed_y))
 
     def _draw_win_overlay(self, world):
         overlay = pygame.Surface((ui.WIDTH, ui.HEIGHT), pygame.SRCALPHA)

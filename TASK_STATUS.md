@@ -40,8 +40,11 @@
 | `docs/specs/gameplay/001.NIKITA_LEAD.VERTICAL_SLICE_PLAYABLE_MATCH_V1.md`   | `NIKITA_LEAD` | `Integration Baseline Approved` | `PLANNED`   | Baseline client/server/db готов; ждёт интеграционный sign-off | 2026-05-28           |
 | `docs/specs/gameplay/003.NIKITA.PLAYABLE_FARM_LOOP_V2.md`                   | `NIKITA`      | `Mini Loop Approved`            | `DONE`      | Нет                                  | 2026-05-28           |
 | `docs/specs/gameplay/004.NIKITA.HARVEST_AND_RECIPE_INGREDIENTS.md`          | `NIKITA`      | `Harvest + Ingredients Approved` | `DONE`      | Нет                                  | 2026-05-28           |
-| `docs/specs/engine_cpp/003.SANYA.PLANT_TICK_GROWTH_AND_ENGINE_MECHANICS.md` | `SANYA`       | `Growth Approved`               | `PLANNED`   | Ждёт обогащение payload (`server/003`) после CP1 | 2026-05-28 |
-| `docs/specs/server/003.NIKITA.SERVER_ENRICH_PLANT_GROWTH.md`                | `NIKITA`      | `Enrich Growth Fields`          | `PLANNED`   | После `engine_cpp/003` CP1           | 2026-05-28           |
+| `docs/specs/engine_cpp/003.SANYA.PLANT_TICK_GROWTH_AND_ENGINE_MECHANICS.md` | `SANYA`       | `Factory Tick Approved`         | `DONE`      | Нет                                  | 2026-05-28 |
+| `docs/specs/server/003.NIKITA.SERVER_ENRICH_PLANT_GROWTH.md`                | `NIKITA`      | `Enrich Growth Fields`          | `DONE`      | Нет                                  | 2026-05-28           |
+| `docs/specs/server/004.NIKITA.FIX_HARVEST_WATER_LEVEL.md`                    | `NIKITA`      | `Fix Applied`                   | `DONE`      | Нет                                  | 2026-05-28           |
+| `docs/specs/server/005.NIKITA.NEXT_FEATURES_ROADMAP.md`                      | `NIKITA`      | `—`                             | `PLANNED`   | Ждёт NIKITA                           | 2026-05-28           |
+| `docs/specs/engine_cpp/004.SANYA.RANDOM_EVENTS.md`                           | `SANYA`       | `—`                             | `PLANNED`   | Ждёт SANYA                            | 2026-05-28           |
 
 ---
 
@@ -89,3 +92,55 @@
 - **Следующие шаги**:
     - Ручной LAN-тест: host + guest, матч до `bread`.
     - `SANYA`: `PLACE_ON_TILE` или расширение тика.
+
+### TEAM-CP-003 (2026-05-28)
+
+- **Участники**: `NIKITA`, `SANYA`
+- **Сделано (`SANYA`)**:
+    - `engine_cpp/003` DONE: harvest с проверкой зрелости, пассивная фаза (испарение/рост/смерть), фабричный тик с очередью.
+    - Stub: зеркальные изменения, stub vs C++ идентичны.
+    - `GAME_CONTRACTS_V1.md`: обновлён (HARVEST_PLANT, PLANT_DIED, пассивная фаза, новые поля TileState).
+    - `smoke_test.py`: +20 тестов (рост, harvest, фабрики, stub actions).
+- **Сделано (`NIKITA`)**:
+    - `server/003` DONE: `action_enricher.py` обогащает `PLACE_ON_TILE` (`growth_time_sec`, `water_decay_per_tick`) и `START_RECIPE` (`output_product_id`).
+    - `server/004` DONE: убрано обнуление `water_level` при harvest.
+    - Снят блокер `engine_cpp/003`: `HARVEST_PLANT` убран из `SERVER_ONLY_ACTIONS`, harvest идёт через engine.
+    - Убран `_advance_factories` из `match.py` — фабричный тик только в engine (было двойное срабатывание).
+    - Очередь завода: при занятом заводе рецепт кладётся в очередь с `duration_sec` из БД, событие `RECIPE_QUEUED`.
+    - Клиент:
+        - Индикатор роста (зелёная полоска на тайлах), `tile_hint` с % роста.
+        - События `PLANT_DIED`, `NOT_RIPE`, `RECIPE_QUEUED` с тостами.
+        - Статус пекарни под кнопками + очередь в сайдбаре.
+        - Окно 1280×800, логи не перекрывают магазин.
+        - Кнопка «Печь» всегда крафтит хлеб (не зависит от цели победы).
+        - `SHOP_HANDLER_VERSION` → `immediate_v4`.
+    - `growth_time_sec` всех культур → 5 сек (для отладки).
+    - `default_win_product_id()` → `"cake"` (невозможно скрафтить → игра не заканчивается).
+    - Тесты обновлены под пассивную фазу engine + новый win target.
+- **Блокеры**: Нет.
+- **Замечание для `SANYA`**:
+    - Engine в `RECIPE_FINISHED` использует `recipe_id` как `product_id`. В MVP совпадает, но правильно — брать `output_product_id` из payload START_RECIPE (enricher его уже отправляет).
+
+### TEAM-CP-004 (2026-05-28) — задача для `SANYA`
+
+**`engine_cpp/004` — случайные события (`APPLY_EVENT`)**
+
+Движок должен обрабатывать новый action `APPLY_EVENT` с payload:
+- `event_type: string` — `"DROUGHT"`, `"FLOOD"`, `"EARTHQUAKE"`, `"EPIDEMIC"`
+
+Эффекты на все клетки всех игроков:
+| Тип | Действие |
+|---|---|
+| `DROUGHT` | `water_level -= 20` (min 0) |
+| `FLOOD` | `water_level += 30` (max 100) |
+| `EARTHQUAKE` | `health -= 30` у всех PLANT-клеток; при `health <= 0` → `PLANT_DIED` |
+| `EPIDEMIC` | `health -= 40` у всех ANIMAL-клеток |
+
+На каждое событие — emit `EVENT_TRIGGERED` с полями: `event_type`, `severity`, `affected_tiles` (количество).
+
+**Stub:** зеркально в `engine_core_stub/stub.py`.
+
+**Контракты:** обновить `GAME_CONTRACTS_V1.md` — добавить `APPLY_EVENT` в список action_type и описать пассивную обработку событий.
+
+Серверная часть (случайный выбор события раз в N тиков) — сделает `NIKITA` после приёмки.
+    - Пора провести ручной LAN-тест (host + guest, матч до `bread`).

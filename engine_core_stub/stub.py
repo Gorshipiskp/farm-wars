@@ -184,6 +184,8 @@ def simulate_tick(input_dict):
                 if factory["factory_id"] == factory_id:
                     factory["active_recipe_id"] = recipe_id
                     factory["remaining_time_sec"] = duration_sec
+                    if "output_product_id" in payload:
+                        factory["output_product_id"] = payload["output_product_id"]
                     found = True
                     break
 
@@ -259,7 +261,12 @@ def simulate_tick(input_dict):
                             tile["occupant_type"] = "PLANT"
                             tile["occupant_id"] = plant_id
                             tile["health"] = initial_health
-                            tile["water_level"] = initial_water
+                            # water_level не трогаем — влажность грядки
+                            tile["growth_elapsed_sec"] = 0
+                            if "growth_time_sec" in payload:
+                                tile["growth_time_sec"] = payload["growth_time_sec"]
+                            if "water_decay_per_tick" in payload:
+                                tile["water_decay_per_tick"] = payload["water_decay_per_tick"]
 
                             events.append({
                                 "contract_version": "v1",
@@ -279,11 +286,147 @@ def simulate_tick(input_dict):
                             tick_id, "MISSING_FIELD",
                             f"No {plant_id} in inventory for player {player_id}"))
 
-        elif action_type in ("BUY_PRODUCT", "HARVEST_PLANT"):
-            log.debug(
-                "Ignoring server-only %s in engine stub: player=%s",
-                action_type, player_id,
-            )
+        elif action_type in ("BUY_PRODUCT", "FEED_ANIMAL", "APPLY_SABOTAGE", "USE_COUNTERMEASURE"):
+            # Заглушка: не реализовано, игнорируем без ошибки
+            pass
+
+        elif action_type == "APPLY_EVENT":
+            event_type = payload["event_type"]
+            affected = 0
+
+            if event_type == "DROUGHT":
+                # Засуха: скорость высыхания +50%
+                for t in tiles:
+                    if t.get("occupant_type") != "PLANT":
+                        continue
+                    decay = t.get("water_decay_per_tick") or 2
+                    decay = max(1, int(decay * 1.5))
+                    t["water_decay_per_tick"] = decay
+                    affected += 1
+
+            elif event_type in ("RAIN", "FLOOD"):
+                # Дождь: влажность растет (decay отрицательный)
+                for t in tiles:
+                    w = t.get("water_level")
+                    if w is None:
+                        continue
+                    decay = t.get("water_decay_per_tick") or 1
+                    if decay < 0:
+                        decay = 1  # уже идет дождь
+                    increase = max(1, int(decay * 0.2))
+                    t["water_decay_per_tick"] = -increase
+                    affected += 1
+
+            elif event_type == "EARTHQUAKE":
+                # Землетрясение: заводы +50% времени
+                for f in next_world_state["factories"]:
+                    if not f.get("active_recipe_id"):
+                        continue
+                    remaining = f.get("remaining_time_sec", 0)
+                    if remaining <= 0:
+                        continue
+                    f["remaining_time_sec"] = int(remaining * 1.5)
+                    affected += 1
+
+            elif event_type == "EPIDEMIC":
+                # Эпидемия: скорость роста животных -50% (заглушка)
+                for t in tiles:
+                    if t.get("occupant_type") != "ANIMAL":
+                        continue
+                    affected += 1
+
+            else:
+                events.append(_make_error_event(tick_id, "INVALID_TYPE",
+                                                f"Unknown event_type: {event_type}"))
+
+            if affected > 0 or event_type in ("DROUGHT", "RAIN", "FLOOD"):
+                events.append({
+                    "contract_version": "v1",
+                    "event_type": "EVENT_TRIGGERED",
+                    "server_tick": tick_id,
+                    "payload": {
+                        "event_type": event_type,
+                        "severity": 1.0,
+                        "affected_tiles": affected,
+                    },
+                })
+
+        elif action_type == "HARVEST_PLANT":
+            tile_id = payload["tile_id"]
+
+            # Найти клетку
+            tile = None
+            for t in tiles:
+                if t["tile_id"] == tile_id:
+                    tile = t
+                    break
+
+            if tile is None:
+                events.append({
+                    "contract_version": "v1",
+                    "event_type": "HARVEST_FAILED",
+                    "server_tick": tick_id,
+                    "payload": {"player_id": player_id, "tile_id": tile_id, "reason": "UNKNOWN_TILE"},
+                })
+            elif tile["owner_player_id"] != player_id:
+                events.append({
+                    "contract_version": "v1",
+                    "event_type": "HARVEST_FAILED",
+                    "server_tick": tick_id,
+                    "payload": {"player_id": player_id, "tile_id": tile_id, "reason": "NOT_OWNER"},
+                })
+            elif tile.get("occupant_type") != "PLANT":
+                events.append({
+                    "contract_version": "v1",
+                    "event_type": "HARVEST_FAILED",
+                    "server_tick": tick_id,
+                    "payload": {"player_id": player_id, "tile_id": tile_id, "reason": "NO_PLANT"},
+                })
+            elif ("growth_time_sec" in tile and tile["growth_time_sec"] is not None and
+                  "growth_elapsed_sec" in tile and tile["growth_elapsed_sec"] is not None and
+                  tile["growth_elapsed_sec"] < tile["growth_time_sec"]):
+                events.append({
+                    "contract_version": "v1",
+                    "event_type": "HARVEST_FAILED",
+                    "server_tick": tick_id,
+                    "payload": {"player_id": player_id, "tile_id": tile_id, "reason": "NOT_RIPE"},
+                })
+            else:
+                # Успех
+                product_id = tile.get("occupant_id", "")
+                HARVEST_YIELD = 2
+
+                for p in next_world_state["players"]:
+                    if p["player_id"] != player_id:
+                        continue
+                    found = False
+                    for item in p["inventory"]:
+                        if item["product_id"] == product_id:
+                            item["amount"] += HARVEST_YIELD
+                            found = True
+                            break
+                    if not found:
+                        p["inventory"].append({"product_id": product_id, "amount": HARVEST_YIELD})
+                    break
+
+                tile["occupant_type"] = "EMPTY"
+                tile["occupant_id"] = None
+                tile["health"] = None
+                tile["growth_elapsed_sec"] = None
+                tile["growth_time_sec"] = None
+                tile["water_decay_per_tick"] = None
+
+                events.append({
+                    "contract_version": "v1",
+                    "event_type": "PLANT_HARVESTED",
+                    "server_tick": tick_id,
+                    "payload": {
+                        "player_id": player_id,
+                        "tile_id": tile_id,
+                        "product_id": product_id,
+                        "amount": HARVEST_YIELD,
+                    },
+                })
 
         else:
             log.warning(
@@ -292,6 +435,124 @@ def simulate_tick(input_dict):
             )
             events.append(_make_error_event(tick_id, "INVALID_TYPE",
                                             f"Unknown action_type: {action_type}"))
+
+    # Шаг 4.5: пассивная фаза — испарение со всех грядок, рост/смерть растений
+    HEALTH_DECAY_PER_TICK = 10
+    DEFAULT_EVAPORATION = 1
+
+    for tile in next_world_state["map"]["tiles"]:
+        # Испарение — для всех грядок с водой
+        water = tile.get("water_level")
+        if water is not None and water > 0:
+            decay = tile.get("water_decay_per_tick") or DEFAULT_EVAPORATION
+            water = max(0, min(100, water - decay))
+            tile["water_level"] = water
+
+        # Дальше — только растения
+        if tile.get("occupant_type") != "PLANT":
+            continue
+
+        water = tile.get("water_level") or 0
+
+        # Рост (если есть вода)
+        if water > 0:
+            tile["growth_elapsed_sec"] = tile.get("growth_elapsed_sec", 0) + 1
+            continue
+
+        # Без воды — потеря здоровья
+        health = tile.get("health") or 100
+        health -= HEALTH_DECAY_PER_TICK
+
+        if health <= 0:
+            dead_plant = tile.get("occupant_id", "")
+            dead_tile = tile.get("tile_id", "")
+            owner = tile.get("owner_player_id", "")
+            tile["occupant_type"] = "EMPTY"
+            tile["occupant_id"] = None
+            tile["health"] = None
+            tile["growth_elapsed_sec"] = None
+            tile["growth_time_sec"] = None
+            tile["water_decay_per_tick"] = None
+            events.append({
+                "contract_version": "v1",
+                "event_type": "PLANT_DIED",
+                "server_tick": tick_id,
+                "payload": {
+                    "tile_id": dead_tile,
+                    "plant_id": dead_plant,
+                    "player_id": owner,
+                    "reason": "DEHYDRATED",
+                },
+            })
+        else:
+            tile["health"] = health
+
+    # Шаг 4.6: пассивная фаза заводов — таймер рецепта
+    for factory in next_world_state["factories"]:
+        if not factory.get("active_recipe_id"):
+            continue
+        remaining = factory.get("remaining_time_sec", 0)
+        if remaining <= 0:
+            continue
+
+        remaining -= 1
+        factory["remaining_time_sec"] = remaining
+
+        if remaining > 0:
+            continue
+
+        # Рецепт завершен
+        recipe_id = factory["active_recipe_id"]
+        owner_id = factory["owner_player_id"]
+        factory_id = factory["factory_id"]
+        product_id = factory.get("output_product_id") or recipe_id
+
+        for p in next_world_state["players"]:
+            if p["player_id"] != owner_id:
+                continue
+            found = False
+            for item in p["inventory"]:
+                if item["product_id"] == product_id:
+                    item["amount"] += 1
+                    found = True
+                    break
+            if not found:
+                p["inventory"].append({"product_id": product_id, "amount": 1})
+            break
+
+        factory["active_recipe_id"] = None
+        factory.pop("output_product_id", None)
+
+        events.append({
+            "contract_version": "v1",
+            "event_type": "RECIPE_FINISHED",
+            "server_tick": tick_id,
+            "payload": {
+                "factory_id": factory_id,
+                "recipe_id": recipe_id,
+                "product_id": product_id,
+                "player_id": owner_id,
+            },
+        })
+
+        # Авто-запуск из очереди
+        queue = factory.get("queue", [])
+        if queue:
+            next_job = queue.pop(0)
+            next_recipe = next_job["recipe_id"]
+            duration = next_job.get("duration_sec", 30)
+            factory["active_recipe_id"] = next_recipe
+            factory["remaining_time_sec"] = duration
+            events.append({
+                "contract_version": "v1",
+                "event_type": "RECIPE_STARTED",
+                "server_tick": tick_id,
+                "payload": {
+                    "factory_id": factory_id,
+                    "recipe_id": next_recipe,
+                    "player_id": owner_id,
+                },
+            })
 
     # Шаг 5: результат
     return {

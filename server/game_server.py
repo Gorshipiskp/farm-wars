@@ -28,7 +28,7 @@ class GameServer:
         from server.match import SHOP_HANDLER_VERSION
 
         log.info(
-            "Server handler=%s (BUY_PRODUCT/HARVEST_PLANT immediate, not sent to engine)",
+            "Server handler=%s (BUY_PRODUCT immediate; HARVEST_PLANT -> engine)",
             SHOP_HANDLER_VERSION,
         )
 

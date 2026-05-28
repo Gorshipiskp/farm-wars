@@ -22,6 +22,8 @@ TILE_SEL = (255, 210, 80)
 TILE_SEL_GLOW = (255, 235, 160)
 WATER_LOW = (180, 100, 80)
 WATER_OK = (70, 150, 200)
+GROWTH = (110, 185, 70)
+GROWTH_READY = (255, 200, 50)
 TEXT = (45, 38, 32)
 TEXT_SOFT = (100, 88, 75)
 TEXT_ON_DARK = (255, 252, 245)
@@ -34,11 +36,11 @@ BTN_SECONDARY = (200, 185, 165)
 BTN_SECONDARY_HOVER = (220, 205, 185)
 MONEY = (255, 200, 60)
 
-WIDTH, HEIGHT = 1024, 720
+WIDTH, HEIGHT = 1280, 800
 FARM_X, FARM_Y = 28, 108
 TILE_SIZE = 80
 TILE_GAP = 10
-PANEL_X = 400
+PANEL_X = 430
 PANEL_W = WIDTH - PANEL_X - 20
 
 PRODUCT_RU = {
@@ -64,8 +66,10 @@ EVENT_RU = {
     "PLANT_WATERED": "Полито",
     "PLANT_HARVESTED": "Собрано",
     "HARVEST_FAILED": "Не собрать",
+    "PLANT_DIED": "Погибло",
     "RECIPE_STARTED": "В печи",
     "RECIPE_FINISHED": "Готово",
+    "RECIPE_QUEUED": "В очереди",
     "RECIPE_REJECTED": "Рецепт нельзя",
     "MATCH_FINISHED": "Матч окончен",
     "CONTRACT_ERROR": "Ошибка",
@@ -165,7 +169,7 @@ class ToastManager:
             msg = humanize_event(ev)
             if msg:
                 kind = "error" if "ошиб" in msg.lower() or "не " in msg.lower() else "ok"
-                if ev.get("event_type") in ("RECIPE_REJECTED", "PURCHASE_FAILED", "HARVEST_FAILED", "CONTRACT_ERROR"):
+                if ev.get("event_type") in ("RECIPE_REJECTED", "PURCHASE_FAILED", "HARVEST_FAILED", "PLANT_DIED", "CONTRACT_ERROR"):
                     kind = "warn" if ev.get("event_type") != "CONTRACT_ERROR" else "error"
                 self.push(msg, kind)
 
@@ -206,6 +210,8 @@ def humanize_event(ev: dict) -> str | None:
         return f"Печём: {product_label(pl.get('recipe_id', ''))}"
     if et == "RECIPE_FINISHED":
         return f"Готово: {product_label(pl.get('product_id', pl.get('recipe_id', '')))}"
+    if et == "RECIPE_QUEUED":
+        return f"В очереди: {product_label(pl.get('recipe_id', ''))}"
     if et == "PURCHASE_FAILED":
         reasons = {
             "NOT_ENOUGH_MONEY": "не хватает Bestiki",
@@ -215,11 +221,15 @@ def humanize_event(ev: dict) -> str | None:
     if et == "HARVEST_FAILED":
         reasons = {
             "NOT_READY": "сначала полей (вода < 50)",
+            "NOT_RIPE": "ещё не созрело",
             "NO_PLANT": "здесь ничего не растёт",
             "EMPTY_TILE": "грядка пуста",
             "NOT_OWNER": "не твоя грядка",
+            "UNKNOWN_TILE": "нет такой грядки",
         }
         return f"Сбор не вышел — {reasons.get(pl.get('reason'), pl.get('reason', ''))}"
+    if et == "PLANT_DIED":
+        return f"Растение погибло: {product_label(pl.get('plant_id', ''))}"
     if et == "RECIPE_REJECTED":
         reasons = {
             "NOT_ENOUGH_INGREDIENTS": "не хватает ингредиентов",
@@ -317,8 +327,19 @@ def tile_hint(tile: dict | None, selected_seed: str) -> str:
     if occ == "EMPTY":
         return f"Пустая грядка · посадить: {product_label(selected_seed)} (T)"
     name = crop_label(tile.get("occupant_id"))
+    growth_elapsed = tile.get("growth_elapsed_sec") or 0
+    growth_needed = tile.get("growth_time_sec") or 0
+    ripe = growth_needed > 0 and growth_elapsed >= growth_needed
+    if ripe:
+        return f"{name} · созрело — можно собирать (H)"
     if water is not None and water < 50:
+        if growth_needed > 0:
+            pct = min(100, int(growth_elapsed * 100 / growth_needed))
+            return f"{name} · рост {pct}% · нужен полив (W)"
         return f"{name} · нужен полив (W)"
+    if growth_needed > 0:
+        pct = min(100, int(growth_elapsed * 100 / growth_needed))
+        return f"{name} · рост {pct}%"
     if water is not None and water >= 50:
         return f"{name} · можно собирать (H)"
     return f"На грядке: {name}"

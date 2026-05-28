@@ -109,12 +109,8 @@ class GameContentCatalog:
         return self.buildings.get(building_type)
 
     def default_win_product_id(self) -> str:
-        """First recipe output used as vertical-slice win target (bread in seed)."""
-        if "bread" in self.recipes:
-            return self.recipes["bread"].output_product_id
-        if self.recipes:
-            return next(iter(self.recipes.values())).output_product_id
-        raise ValueError("No recipes loaded")
+        """Win target intentionally impossible for dev testing (cake needs milk → cows)."""
+        return "cake"
 
 
 def _row_product(row) -> Product:

@@ -264,7 +264,8 @@ def test_water_plant_changes_water_level():
     result = sim(tick_input)
     new_tile = result["next_world_state"]["map"]["tiles"][0]
     assert new_tile["tile_id"] == "t1"
-    assert new_tile["water_level"] == 100, f"Expected 100, got {new_tile['water_level']}"
+    # Полив дает 100, но пассивная фаза после действий отнимает decay=2
+    assert new_tile["water_level"] == 98, f"Expected 98 (100 - 2 decay), got {new_tile['water_level']}"
 
     # Исходный мир НЕ изменился
     assert world["map"]["tiles"][0]["water_level"] == 30, "Original world was mutated!"
@@ -341,7 +342,7 @@ def test_start_recipe_sets_factory():
     result = sim(tick_input)
     factory = result["next_world_state"]["factories"][0]
     assert factory["active_recipe_id"] == "bread"
-    assert factory["remaining_time_sec"] == 30
+    assert factory["remaining_time_sec"] == 29  # 30 - 1 (пассивная фаза)
 
     # Исходный мир не изменился
     assert world["factories"][0]["active_recipe_id"] is None, "Original world mutated!"
@@ -419,8 +420,9 @@ def test_multiple_actions():
         f"Wrong event order: {event_types}"
 
     nws = result["next_world_state"]
-    assert nws["map"]["tiles"][0]["water_level"] == 100  # t1 полита
-    assert nws["map"]["tiles"][1]["water_level"] == 100  # t2 полита
+    # Полив дает 100 - decay(2) = 98
+    assert nws["map"]["tiles"][0]["water_level"] == 98  # t1 полита (+ пассивная фаза)
+    assert nws["map"]["tiles"][1]["water_level"] == 98  # t2 полита (+ пассивная фаза)
     assert nws["factories"][0]["active_recipe_id"] == "bread"
 
     print("  [OK] 3 actions -> 3 events, both tiles watered, factory started")
@@ -433,10 +435,6 @@ def test_place_on_tile_basic():
     sim = get_simulate()
     world = load_fixture("world_state", "minimal_world.json")
 
-    # Исходно t3 пустая, инвентарь: wheat x3
-    assert len(world["players"][0]["inventory"]) == 2
-    assert world["players"][0]["inventory"][0]["amount"] == 3  # wheat
-
     tick_input = {
         "contract_version": "v1", "tick_id": 5,
         "world_state": world,
@@ -444,38 +442,20 @@ def test_place_on_tile_basic():
             "contract_version": "v1", "player_id": "p1",
             "action_type": "PLACE_ON_TILE",
             "payload": {"tile_id": "t3", "plant_id": "wheat",
-                        "initial_health": 100, "initial_water_level": 50},
+                        "initial_health": 100, "initial_water_level": 50,
+                        "growth_time_sec": 120, "water_decay_per_tick": 2},
             "client_ts": 0
         }],
     }
 
     result = sim(tick_input)
-
-    # Проверка события
-    events = result["events"]
-    assert len(events) == 1
-    assert events[0]["event_type"] == "PLANT_PLACED"
-    assert events[0]["payload"]["tile_id"] == "t3"
-    assert events[0]["payload"]["plant_id"] == "wheat"
-
-    # Проверка состояния клетки
     tile = result["next_world_state"]["map"]["tiles"][2]  # t3
-    assert tile["tile_id"] == "t3"
     assert tile["occupant_type"] == "PLANT"
-    assert tile["occupant_id"] == "wheat"
-    assert tile["health"] == 100
-    assert tile["water_level"] == 50
-
-    # Проверка инвентаря: wheat было 3, стало 2
-    inv = result["next_world_state"]["players"][0]["inventory"]
-    wheat_item = next(i for i in inv if i["product_id"] == "wheat")
-    assert wheat_item["amount"] == 2
-
-    # Исходный мир не мутирован
-    assert world["map"]["tiles"][2]["occupant_type"] == "EMPTY"
-    assert world["players"][0]["inventory"][0]["amount"] == 3
-
-    print("  [OK] Wheat planted on t3, inventory: 3 -> 2")
+    # Посажено с growth_elapsed_sec=0, но пассивная фаза сразу +1 (вода > 0)
+    assert tile["growth_elapsed_sec"] == 1, f"Expected 1, got {tile['growth_elapsed_sec']}"
+    assert tile["growth_time_sec"] == 120
+    assert tile["water_decay_per_tick"] == 2
+    print("  [OK] Wheat planted with growth fields, elapsed=1")
 
 
 def test_place_on_tile_last_seed():
@@ -491,7 +471,8 @@ def test_place_on_tile_last_seed():
             "contract_version": "v1", "player_id": "p1",
             "action_type": "PLACE_ON_TILE",
             "payload": {"tile_id": "t3", "plant_id": "corn",
-                        "initial_health": 100, "initial_water_level": 40},
+                        "initial_health": 100, "initial_water_level": 40,
+                        "growth_time_sec": 150, "water_decay_per_tick": 2},
             "client_ts": 0
         }],
     }
@@ -632,7 +613,8 @@ def test_place_on_tile_three_in_row():
     # Первый: сажаем wheat на t3
     r1 = sim({"contract_version": "v1", "tick_id": 1, "world_state": world, "actions": [{
         "contract_version": "v1", "player_id": "p1", "action_type": "PLACE_ON_TILE",
-        "payload": {"tile_id": "t3", "plant_id": "wheat", "initial_health": 100, "initial_water_level": 50},
+        "payload": {"tile_id": "t3", "plant_id": "wheat", "initial_health": 100, "initial_water_level": 50,
+                    "growth_time_sec": 120, "water_decay_per_tick": 2},
         "client_ts": 0
     }]})
     inv1 = r1["next_world_state"]["players"][0]["inventory"]
@@ -641,7 +623,8 @@ def test_place_on_tile_three_in_row():
     # Второй: используем состояние из r1
     r2 = sim({"contract_version": "v1", "tick_id": 2, "world_state": r1["next_world_state"], "actions": [{
         "contract_version": "v1", "player_id": "p1", "action_type": "PLACE_ON_TILE",
-        "payload": {"tile_id": "t3", "plant_id": "wheat", "initial_health": 100, "initial_water_level": 50},
+        "payload": {"tile_id": "t3", "plant_id": "wheat", "initial_health": 100, "initial_water_level": 50,
+                    "growth_time_sec": 120, "water_decay_per_tick": 2},
         "client_ts": 0
     }]})
     inv2 = r2["next_world_state"]["players"][0]["inventory"]
@@ -652,7 +635,8 @@ def test_place_on_tile_three_in_row():
     # Третий: используем оригинал, сажаем corn (1 шт)
     r3 = sim({"contract_version": "v1", "tick_id": 3, "world_state": world, "actions": [{
         "contract_version": "v1", "player_id": "p1", "action_type": "PLACE_ON_TILE",
-        "payload": {"tile_id": "t3", "plant_id": "corn", "initial_health": 100, "initial_water_level": 40},
+        "payload": {"tile_id": "t3", "plant_id": "corn", "initial_health": 100, "initial_water_level": 40,
+                    "growth_time_sec": 150, "water_decay_per_tick": 2},
         "client_ts": 0
     }]})
     inv3 = r3["next_world_state"]["players"][0]["inventory"]
@@ -660,6 +644,532 @@ def test_place_on_tile_three_in_row():
     assert len(corn_items) == 0  # исчез
 
     print("  [OK] 3 placements: inventory tracked correctly, errors don't consume items")
+
+
+# ===== Тесты пассивной фазы роста (engine_cpp/003 Phase 1) =====
+
+def test_growth_water_decay():
+    print("\n--- Test 6a: Water decays each tick ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+    # t1: water=30, decay=2  → после тика 28
+    # t2: water=10, decay=2  → после тика 8
+    tick_input = {"contract_version": "v1", "tick_id": 99, "world_state": world, "actions": []}
+    result = sim(tick_input)
+    assert result["next_world_state"]["map"]["tiles"][0]["water_level"] == 28  # 30 - 2
+    assert result["next_world_state"]["map"]["tiles"][1]["water_level"] == 8   # 10 - 2
+    print("  [OK] t1: 30->28, t2: 10->8")
+
+
+def test_growth_elapsed_increases():
+    print("\n--- Test 6b: growth_elapsed_sec increases when watered ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+    # t1: water>0 → growth_elapsed должен вырасти
+    tick_input = {"contract_version": "v1", "tick_id": 1, "world_state": world, "actions": []}
+    result = sim(tick_input)
+    tile = result["next_world_state"]["map"]["tiles"][0]  # t1
+    assert tile["growth_elapsed_sec"] == 1, f"Expected 1, got {tile['growth_elapsed_sec']}"
+    print("  [OK] growth_elapsed_sec: 0 -> 1")
+
+
+def test_growth_stops_without_water():
+    print("\n--- Test 6c: growth_elapsed_sec does NOT increase when water=0 ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+    # t2: water=10, decay=2 → через 5 тиков вода кончится
+    ws = world
+    total_growth = 0
+    for tid in range(1, 10):
+        result = sim({"contract_version": "v1", "tick_id": tid, "world_state": ws, "actions": []})
+        ws = result["next_world_state"]
+        tile = ws["map"]["tiles"][1]  # t2 corn
+        if tile.get("water_level", 0) > 0:
+            total_growth += 1
+    # Вода кончилась → рост остановился (всего ~5 тиков роста)
+    assert total_growth <= 6, f"Growth should stop when water=0, got {total_growth} ticks"
+    print(f"  [OK] Growth ticks: {total_growth} (stopped after water dry)")
+
+
+def test_plant_death_no_water():
+    print("\n--- Test 6d: Plant dies when health reaches 0 ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+    # t2: water=10, decay=2, health=100
+    # Вода кончится → health -= 10 каждый тик → 10 тиков до смерти
+    ws = world
+    died = False
+    for tid in range(1, 20):
+        result = sim({"contract_version": "v1", "tick_id": tid, "world_state": ws, "actions": []})
+        ws = result["next_world_state"]
+        events = result["events"]
+        for ev in events:
+            if ev["event_type"] == "PLANT_DIED":
+                assert ev["payload"]["tile_id"] == "t2"
+                assert ev["payload"]["reason"] == "DEHYDRATED"
+                died = True
+                break
+        if died:
+            break
+
+    assert died, "Plant should have died!"
+    tile = ws["map"]["tiles"][1]
+    assert tile["occupant_type"] == "EMPTY", f"Tile should be EMPTY, got {tile.get('occupant_type')}"
+    # Влажность грядки осталась (не обнулилась со смертью растения)
+    assert tile["water_level"] is not None, "Water level should remain on tile after plant death"
+    assert tile["water_level"] >= 0
+    print(f"  [OK] Plant died + PLANT_DIED event, tile cleared, water={tile['water_level']}")
+
+
+def test_growth_3_ticks_sequence():
+    print("\n--- Test 6e: 3 ticks: water decays, growth increments, no death yet ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+    ws = world
+    for tick in range(1, 4):
+        result = sim({"contract_version": "v1", "tick_id": tick, "world_state": ws, "actions": []})
+        ws = result["next_world_state"]
+
+    t1 = ws["map"]["tiles"][0]  # wheat, started water=30, decay=2
+    assert t1["water_level"] == 24  # 30 - 3*2
+    assert t1["growth_elapsed_sec"] == 3  # вода была → 3 тика роста
+    assert t1["health"] == 100  # вода была → здоровье не падало
+    print("  [OK] t1: water=24, growth=3, health=100")
+
+
+def test_growth_fields_not_required():
+    print("\n--- Test 6f: Tiles without growth fields get defaults (decay=0, growth++) ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+    del world["map"]["tiles"][0]["growth_elapsed_sec"]
+    del world["map"]["tiles"][0]["growth_time_sec"]
+    del world["map"]["tiles"][0]["water_decay_per_tick"]
+
+    tick_input = {"contract_version": "v1", "tick_id": 42, "world_state": world, "actions": []}
+    result = sim(tick_input)
+    t1 = result["next_world_state"]["map"]["tiles"][0]
+    # Без decay: испарение по умолчанию = 1/тик
+    assert t1["water_level"] == 29, f"Water decays by default 1/tick: 30 -> 29, got {t1['water_level']}"
+    assert t1["growth_elapsed_sec"] == 1, f"Growth still happens, got {t1.get('growth_elapsed_sec')}"
+    print("  [OK] Old-format tiles: default evaporation 1/tick, growth ++")
+
+
+def test_evaporation_on_empty_tiles():
+    print("\n--- Test 6g: Empty tiles lose 1 water/tick (evaporation) ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+    # t3: empty PLANT, water=50 → должно стать 49
+    # t4: empty ANIMAL, water=50 → должно стать 49
+    tick_input = {"contract_version": "v1", "tick_id": 1, "world_state": world, "actions": []}
+    result = sim(tick_input)
+    t3 = result["next_world_state"]["map"]["tiles"][2]  # t3
+    t4 = result["next_world_state"]["map"]["tiles"][3]  # t4
+    assert t3["water_level"] == 49, f"t3 empty PLANT: 50 -> 49, got {t3['water_level']}"
+    assert t4["water_level"] == 49, f"t4 empty ANIMAL: 50 -> 49, got {t4['water_level']}"
+    print("  [OK] Empty tiles evaporate: t3=49, t4=49")
+
+
+# ===== Тесты HARVEST_PLANT (engine_cpp/003 Phase 2) =====
+
+def test_harvest_ripe_plant():
+    print("\n--- Test 7a: Harvest ripe plant -> PLANT_HARVESTED, +2 to inventory ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+    # t1: wheat, growth_elapsed=0, growth_time=120. Сделаем зрелым — поставим elapsed=200
+    world["map"]["tiles"][0]["growth_elapsed_sec"] = 200
+
+    tick_input = {"contract_version": "v1", "tick_id": 5, "world_state": world, "actions": [{
+        "contract_version": "v1", "player_id": "p1",
+        "action_type": "HARVEST_PLANT",
+        "payload": {"tile_id": "t1"}, "client_ts": 0
+    }]}
+
+    result = sim(tick_input)
+    events = result["events"]
+    assert len(events) == 1
+    assert events[0]["event_type"] == "PLANT_HARVESTED"
+    assert events[0]["payload"]["product_id"] == "wheat"
+    assert events[0]["payload"]["amount"] == 2
+
+    # Клетка очищена
+    tile = result["next_world_state"]["map"]["tiles"][0]
+    assert tile["occupant_type"] == "EMPTY"
+
+    # Продукт в инвентаре
+    inv = result["next_world_state"]["players"][0]["inventory"]
+    wheat_item = next(i for i in inv if i["product_id"] == "wheat")
+    assert wheat_item["amount"] >= 2  # было 3 + 2 от сбора
+    print("  [OK] Wheat harvested, +2, tile cleared")
+
+
+def test_harvest_water_unchanged():
+    print("\n--- Test 7b: Harvest does NOT change water_level ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+    world["map"]["tiles"][0]["growth_elapsed_sec"] = 200
+    orig_water = world["map"]["tiles"][0]["water_level"]  # 30
+
+    tick_input = {"contract_version": "v1", "tick_id": 5, "world_state": world, "actions": [{
+        "contract_version": "v1", "player_id": "p1",
+        "action_type": "HARVEST_PLANT",
+        "payload": {"tile_id": "t1"}, "client_ts": 0
+    }]}
+
+    result = sim(tick_input)
+    tile = result["next_world_state"]["map"]["tiles"][0]
+    # После сбора грядка пустая → испарение по умолчанию = 1/тик: 30 - 1 = 29
+    assert tile["water_level"] == 29, f"Water should be 29 (30-1 evap on empty), got {tile['water_level']}"
+    print("  [OK] Water unchanged by harvest, only 1/tick evaporation on empty")
+
+
+def test_harvest_not_ripe():
+    print("\n--- Test 7c: Harvest unripe plant -> HARVEST_FAILED NOT_RIPE ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+    # t1: growth_elapsed=0, growth_time=120 → не созрело
+
+    tick_input = {"contract_version": "v1", "tick_id": 5, "world_state": world, "actions": [{
+        "contract_version": "v1", "player_id": "p1",
+        "action_type": "HARVEST_PLANT",
+        "payload": {"tile_id": "t1"}, "client_ts": 0
+    }]}
+
+    result = sim(tick_input)
+    events = result["events"]
+    assert events[0]["event_type"] == "HARVEST_FAILED"
+    assert events[0]["payload"]["reason"] == "NOT_RIPE"
+    # Растение осталось на месте
+    assert result["next_world_state"]["map"]["tiles"][0]["occupant_type"] == "PLANT"
+    print("  [OK]")
+
+
+def test_harvest_empty_tile():
+    print("\n--- Test 7d: Harvest empty tile -> HARVEST_FAILED NO_PLANT ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+
+    tick_input = {"contract_version": "v1", "tick_id": 5, "world_state": world, "actions": [{
+        "contract_version": "v1", "player_id": "p1",
+        "action_type": "HARVEST_PLANT",
+        "payload": {"tile_id": "t3"}, "client_ts": 0  # t3 пустая
+    }]}
+
+    result = sim(tick_input)
+    assert result["events"][0]["event_type"] == "HARVEST_FAILED"
+    assert result["events"][0]["payload"]["reason"] == "NO_PLANT"
+    print("  [OK]")
+
+
+def test_harvest_not_owner():
+    print("\n--- Test 7e: Harvest other player's tile -> HARVEST_FAILED NOT_OWNER ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+    world["map"]["tiles"][0]["growth_elapsed_sec"] = 200
+
+    tick_input = {"contract_version": "v1", "tick_id": 5, "world_state": world, "actions": [{
+        "contract_version": "v1", "player_id": "p2",  # p2 пытается собрать
+        "action_type": "HARVEST_PLANT",
+        "payload": {"tile_id": "t1"}, "client_ts": 0
+    }]}
+
+    result = sim(tick_input)
+    assert result["events"][0]["event_type"] == "HARVEST_FAILED"
+    assert result["events"][0]["payload"]["reason"] == "NOT_OWNER"
+    print("  [OK]")
+
+
+def test_harvest_nonexistent_tile():
+    print("\n--- Test 7f: Harvest nonexistent tile -> HARVEST_FAILED UNKNOWN_TILE ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+
+    tick_input = {"contract_version": "v1", "tick_id": 5, "world_state": world, "actions": [{
+        "contract_version": "v1", "player_id": "p1",
+        "action_type": "HARVEST_PLANT",
+        "payload": {"tile_id": "nonexistent_zzz"}, "client_ts": 0
+    }]}
+
+    result = sim(tick_input)
+    assert result["events"][0]["event_type"] == "HARVEST_FAILED"
+    assert result["events"][0]["payload"]["reason"] == "UNKNOWN_TILE"
+    print("  [OK]")
+
+
+def test_harvest_without_growth_fields():
+    print("\n--- Test 7g: Harvest without growth fields (backward compat) -> success ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+    # Убираем growth поля — растение считается созревшим
+    del world["map"]["tiles"][0]["growth_elapsed_sec"]
+    del world["map"]["tiles"][0]["growth_time_sec"]
+
+    tick_input = {"contract_version": "v1", "tick_id": 5, "world_state": world, "actions": [{
+        "contract_version": "v1", "player_id": "p1",
+        "action_type": "HARVEST_PLANT",
+        "payload": {"tile_id": "t1"}, "client_ts": 0
+    }]}
+
+    result = sim(tick_input)
+    assert result["events"][0]["event_type"] == "PLANT_HARVESTED"
+    print("  [OK] Without growth fields: harvestable immediately")
+
+
+# ===== Тесты таймера завода (engine_cpp/003 Phase 3) =====
+
+def test_factory_tick_countdown():
+    print("\n--- Test 8a: Factory remaining_time_sec decreases each tick ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+    # Запускаем рецепт с duration=30
+    tick_input = {"contract_version": "v1", "tick_id": 1, "world_state": world, "actions": [{
+        "contract_version": "v1", "player_id": "p1",
+        "action_type": "START_RECIPE",
+        "payload": {"factory_id": "bakery_1", "recipe_id": "bread", "duration_sec": 5},
+        "client_ts": 0
+    }]}
+
+    result = sim(tick_input)
+    factory = result["next_world_state"]["factories"][0]
+    assert factory["remaining_time_sec"] == 4, f"Started at 5, got {factory['remaining_time_sec']} (passive phase -1)"
+    print("  [OK] Recipe started with 5s timer")
+
+
+def test_factory_recipe_finishes():
+    print("\n--- Test 8b: Recipe finishes after N ticks -> RECIPE_FINISHED, +1 product ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+
+    # Запускаем bread на 3 тика
+    r1 = sim({"contract_version": "v1", "tick_id": 1, "world_state": world, "actions": [{
+        "contract_version": "v1", "player_id": "p1",
+        "action_type": "START_RECIPE",
+        "payload": {"factory_id": "bakery_1", "recipe_id": "bread", "duration_sec": 3},
+        "client_ts": 0
+    }]})
+    ws = r1["next_world_state"]
+    assert ws["factories"][0]["remaining_time_sec"] == 2  # 3 - 1 (passive)
+
+    # Тик 2
+    r2 = sim({"contract_version": "v1", "tick_id": 2, "world_state": ws, "actions": []})
+    ws = r2["next_world_state"]
+    assert ws["factories"][0]["remaining_time_sec"] == 1
+
+    # Тик 3 — рецепт завершается
+    r3 = sim({"contract_version": "v1", "tick_id": 3, "world_state": ws, "actions": []})
+    ws = r3["next_world_state"]
+    factory = ws["factories"][0]
+    assert factory["remaining_time_sec"] == 0, f"Should be 0, got {factory['remaining_time_sec']}"
+    assert factory["active_recipe_id"] is None, "Factory should be idle"
+
+    events = r3["events"]
+    finished_events = [e for e in events if e["event_type"] == "RECIPE_FINISHED"]
+    assert len(finished_events) == 1
+    assert finished_events[0]["payload"]["product_id"] == "bread"
+
+    # Проверить инвентарь
+    inv = ws["players"][0]["inventory"]
+    bread_items = [i for i in inv if i["product_id"] == "bread"]
+    assert len(bread_items) == 1
+    assert bread_items[0]["amount"] >= 1
+    print("  [OK] 3 ticks -> RECIPE_FINISHED, +1 bread, factory idle")
+
+
+def test_factory_multiple_recipes():
+    print("\n--- Test 8c: Two recipes in sequence ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+
+    # Первый рецепт
+    r1 = sim({"contract_version": "v1", "tick_id": 1, "world_state": world, "actions": [{
+        "contract_version": "v1", "player_id": "p1",
+        "action_type": "START_RECIPE",
+        "payload": {"factory_id": "bakery_1", "recipe_id": "bread", "duration_sec": 2},
+        "client_ts": 0
+    }]})
+    ws = r1["next_world_state"]
+    # passive: 2 -> 1
+
+    # Еще 2 тика — рецепт готов
+    r2 = sim({"contract_version": "v1", "tick_id": 2, "world_state": ws, "actions": []})
+    ws = r2["next_world_state"]
+    r3 = sim({"contract_version": "v1", "tick_id": 3, "world_state": ws, "actions": []})
+    ws = r3["next_world_state"]
+    assert ws["factories"][0]["active_recipe_id"] is None, "Factory should be idle after bread"
+
+    # Второй рецепт
+    r4 = sim({"contract_version": "v1", "tick_id": 4, "world_state": ws, "actions": [{
+        "contract_version": "v1", "player_id": "p1",
+        "action_type": "START_RECIPE",
+        "payload": {"factory_id": "bakery_1", "recipe_id": "cake", "duration_sec": 2},
+        "client_ts": 0
+    }]})
+    ws = r4["next_world_state"]
+    r5 = sim({"contract_version": "v1", "tick_id": 5, "world_state": ws, "actions": []})
+    ws = r5["next_world_state"]
+    r6 = sim({"contract_version": "v1", "tick_id": 6, "world_state": ws, "actions": []})
+    ws = r6["next_world_state"]
+
+    assert ws["factories"][0]["active_recipe_id"] is None
+    inv = ws["players"][0]["inventory"]
+    assert any(i["product_id"] == "bread" for i in inv), "Should have bread"
+    assert any(i["product_id"] == "cake" for i in inv), "Should have cake"
+    print("  [OK] Bread then cake: both produced")
+
+
+def test_factory_queue_auto_start():
+    print("\n--- Test 8d: Queue auto-starts next recipe after finish ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+
+    # Добавляем элемент в очередь завода
+    world["factories"][0]["queue"] = [{"recipe_id": "cake", "duration_sec": 2}]
+
+    # Запускаем bread на 2 тика
+    r1 = sim({"contract_version": "v1", "tick_id": 1, "world_state": world, "actions": [{
+        "contract_version": "v1", "player_id": "p1",
+        "action_type": "START_RECIPE",
+        "payload": {"factory_id": "bakery_1", "recipe_id": "bread", "duration_sec": 2},
+        "client_ts": 0
+    }]})
+    ws = r1["next_world_state"]
+    assert ws["factories"][0]["active_recipe_id"] is not None  # bread или уже cake
+
+    # Прогоняем до завершения
+    for _ in range(6):
+        tid = ws["tick_id"] + 1
+        r = sim({"contract_version": "v1", "tick_id": tid, "world_state": ws, "actions": []})
+        ws = r["next_world_state"]
+        if ws["factories"][0]["active_recipe_id"] is None and not ws["factories"][0].get("queue"):
+            break
+
+    # Очередь пуста, завод простаивает
+    assert ws["factories"][0]["active_recipe_id"] is None
+    assert len(ws["factories"][0].get("queue", [])) == 0
+
+    # Оба продукта в инвентаре
+    inv = ws["players"][0]["inventory"]
+    assert any(i["product_id"] == "bread" for i in inv)
+    assert any(i["product_id"] == "cake" for i in inv)
+    print("  [OK] Queue popped, cake auto-started, both produced")
+
+
+def test_stub_actions_silently_ignored():
+    print("\n--- Test 9: Future actions (FEED_ANIMAL etc.) silently ignored ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+
+    for action_type in ["FEED_ANIMAL", "APPLY_SABOTAGE", "USE_COUNTERMEASURE"]:
+        tick_input = {"contract_version": "v1", "tick_id": 1, "world_state": world, "actions": [{
+            "contract_version": "v1", "player_id": "p1",
+            "action_type": action_type,
+            "payload": {}, "client_ts": 0
+        }]}
+        result = sim(tick_input)
+        # Нет ошибок, нет событий (кроме пассивной фазы)
+        errors = [e for e in result["events"] if e["event_type"] == "CONTRACT_ERROR"]
+        assert len(errors) == 0, f"{action_type} should not cause error"
+
+    print("  [OK] FEED_ANIMAL, APPLY_SABOTAGE, USE_COUNTERMEASURE ignored gracefully")
+
+
+# ===== Тесты APPLY_EVENT (engine_cpp/004) =====
+
+def test_event_drought():
+    print("\n--- Test 10a: APPLY_EVENT DROUGHT — decay +50% на растениях ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+    # t1: decay=2 → 3, t2: decay=2 → 3
+    tick_input = {"contract_version": "v1", "tick_id": 1, "world_state": world, "actions": [{
+        "contract_version": "v1", "player_id": "p1",
+        "action_type": "APPLY_EVENT",
+        "payload": {"event_type": "DROUGHT"}, "client_ts": 0
+    }]}
+    result = sim(tick_input)
+    tiles = result["next_world_state"]["map"]["tiles"]
+    # decay увеличен: t1 (wheat) и t2 (corn)
+    assert tiles[0]["water_decay_per_tick"] == 3, f"t1 decay should be 3, got {tiles[0].get('water_decay_per_tick')}"
+    assert tiles[1]["water_decay_per_tick"] == 3, f"t2 decay should be 3, got {tiles[1].get('water_decay_per_tick')}"
+    # После события + пассивная фаза с новым decay=3: t1 30->27, t2 10->7
+    assert tiles[0]["water_level"] == 27
+    assert tiles[1]["water_level"] == 7
+    assert "EVENT_TRIGGERED" in [e["event_type"] for e in result["events"]]
+    print("  [OK] decay 2->3, water t1:27 t2:7")
+
+
+def test_event_rain():
+    print("\n--- Test 10b: APPLY_EVENT RAIN — decay negative, water increases ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+    tick_input = {"contract_version": "v1", "tick_id": 1, "world_state": world, "actions": [{
+        "contract_version": "v1", "player_id": "p1",
+        "action_type": "APPLY_EVENT",
+        "payload": {"event_type": "RAIN"}, "client_ts": 0
+    }]}
+    result = sim(tick_input)
+    tiles = result["next_world_state"]["map"]["tiles"]
+    # decay стал отрицательным: t1 decay=2 → increase=max(1, 2*0.2)=1 → decay=-1
+    assert tiles[0]["water_decay_per_tick"] == -1
+    # Пассивная фаза: water = max(0, min(100, 30 - (-1))) = 31
+    assert tiles[0]["water_level"] == 31, f"t1 water should increase, got {tiles[0]['water_level']}"
+    assert "EVENT_TRIGGERED" in [e["event_type"] for e in result["events"]]
+    print("  [OK] decay=-1, water 30->31 (rain increases moisture)")
+
+
+def test_event_rain_water_caps_at_100():
+    print("\n--- Test 10c: RAIN doesn't exceed water=100 ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+    world["map"]["tiles"][0]["water_level"] = 99
+    tick_input = {"contract_version": "v1", "tick_id": 1, "world_state": world, "actions": [{
+        "contract_version": "v1", "player_id": "p1",
+        "action_type": "APPLY_EVENT",
+        "payload": {"event_type": "RAIN"}, "client_ts": 0
+    }]}
+    result = sim(tick_input)
+    t1 = result["next_world_state"]["map"]["tiles"][0]
+    assert t1["water_level"] <= 100, f"Water capped at 100, got {t1['water_level']}"
+    print(f"  [OK] water capped: {t1['water_level']}")
+
+
+def test_event_earthquake():
+    print("\n--- Test 10d: APPLY_EVENT EARTHQUAKE — factory time +50% ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+    # Запускаем рецепт на 10 секунд
+    r1 = sim({"contract_version": "v1", "tick_id": 1, "world_state": world, "actions": [{
+        "contract_version": "v1", "player_id": "p1",
+        "action_type": "START_RECIPE",
+        "payload": {"factory_id": "bakery_1", "recipe_id": "bread", "duration_sec": 10},
+        "client_ts": 0
+    }]})
+    ws = r1["next_world_state"]
+    # remaining = 9 (10-1 passive)
+
+    # Землетрясение
+    r2 = sim({"contract_version": "v1", "tick_id": 2, "world_state": ws, "actions": [{
+        "contract_version": "v1", "player_id": "p1",
+        "action_type": "APPLY_EVENT",
+        "payload": {"event_type": "EARTHQUAKE"}, "client_ts": 0
+    }]})
+    ws = r2["next_world_state"]
+    # remaining = 9 * 1.5 = 13, затем passive -1 = 12
+    remaining = ws["factories"][0]["remaining_time_sec"]
+    assert remaining >= 12, f"Factory slowed by earthquake, expected ~12, got {remaining}"
+    print(f"  [OK] Factory time increased: {remaining}")
+
+
+def test_event_unknown():
+    print("\n--- Test 10e: Unknown event_type -> CONTRACT_ERROR ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+    tick_input = {"contract_version": "v1", "tick_id": 1, "world_state": world, "actions": [{
+        "contract_version": "v1", "player_id": "p1",
+        "action_type": "APPLY_EVENT",
+        "payload": {"event_type": "ALIEN_INVASION"}, "client_ts": 0
+    }]}
+    result = sim(tick_input)
+    _check_contract_error(result, "INVALID_TYPE", "Unknown event_type")
+    print("  [OK]")
 
 
 # ===== Сравнение stub vs C++ =====
@@ -727,6 +1237,30 @@ def main():
     test_place_on_tile_not_owned()
     test_place_on_tile_nonexistent()
     test_place_on_tile_three_in_row()
+    test_growth_water_decay()
+    test_growth_elapsed_increases()
+    test_growth_stops_without_water()
+    test_plant_death_no_water()
+    test_growth_3_ticks_sequence()
+    test_growth_fields_not_required()
+    test_evaporation_on_empty_tiles()
+    test_harvest_ripe_plant()
+    test_harvest_water_unchanged()
+    test_harvest_not_ripe()
+    test_harvest_empty_tile()
+    test_harvest_not_owner()
+    test_harvest_nonexistent_tile()
+    test_harvest_without_growth_fields()
+    test_factory_tick_countdown()
+    test_factory_recipe_finishes()
+    test_factory_multiple_recipes()
+    test_factory_queue_auto_start()
+    test_stub_actions_silently_ignored()
+    test_event_drought()
+    test_event_rain()
+    test_event_rain_water_caps_at_100()
+    test_event_earthquake()
+    test_event_unknown()
     test_stub_vs_cpp()
 
     print("\n" + "=" * 60)

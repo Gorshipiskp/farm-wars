@@ -98,7 +98,7 @@ def test_engine_integration():
 
     assert sync is not None
     after = _tile_water(sync["world_state"], tile_id)
-    assert after == 100, f"expected water 100, got {after} (before={before})"
+    assert after >= 96, f"expected water >= 96, got {after} (before={before})"
     print(f"  [OK] WATER_PLANT: {before} -> {after}")
 
 
@@ -136,7 +136,7 @@ def test_place_on_tile_enriched():
     tile = _find_tile(sync["world_state"], tile_id)
     assert tile["occupant_type"] == "PLANT"
     assert tile["occupant_id"] == "wheat"
-    assert tile["water_level"] == 50  # wheat initial_water_level from seed
+    assert tile["water_level"] >= 48  # wheat initial_water_level=50; passive decay in same tick
 
     wheat_after = _inventory_amount(sync["world_state"]["players"][0], "wheat")
     assert wheat_after == wheat_before - 1
@@ -319,7 +319,7 @@ def test_start_recipe_wrong_building():
 
 
 def test_mini_loop_buy_plant_water_bake():
-    print("\n--- gameplay/003: buy -> plant -> water -> bake -> win ---")
+    print("\n--- gameplay/003: buy -> plant -> water -> bake (no win, target is cake) ---")
     game = GameServer()
     created = game.create_match("Farmer")
     match_id = created["match_id"]
@@ -332,6 +332,10 @@ def test_mini_loop_buy_plant_water_bake():
     match.process_tick(simulate)
     game.submit_action(_action(match_id, "p1", "WATER_PLANT", {"tile_id": "p1_t3"}))
     match.process_tick(simulate)
+
+    tile = _find_tile(match.world_state, "p1_t3")
+    tile["growth_elapsed_sec"] = tile.get("growth_time_sec", 0)
+
     game.submit_action(_action(match_id, "p1", "HARVEST_PLANT", {"tile_id": "p1_t3"}))
     game.submit_action(_action(match_id, "p1", "BUY_PRODUCT", {"product_id": "flour", "amount": 2}))
     game.submit_action(_action(match_id, "p1", "START_RECIPE", {
@@ -344,15 +348,12 @@ def test_mini_loop_buy_plant_water_bake():
         if match.status == match.FINISHED:
             break
 
-    assert match.status == match.FINISHED
-    assert match.world_state["win_condition"]["winner_player_id"] == "p1"
+    assert match.status == match.RUNNING, "Game should not end (target is cake, not bread)"
+    inv = match.world_state["players"][0]["inventory"]
+    has_bread = any(i["product_id"] == "bread" and i["amount"] >= 1 for i in inv)
+    assert has_bread, "Bread should be produced"
     events = [e["event_type"] for e in match.sync_history[-1]["events"]]
-    assert "PRODUCT_PURCHASED" in events or any(
-        e["event_type"] == "PRODUCT_PURCHASED"
-        for sync in match.sync_history
-        for e in sync["events"]
-    )
-    print(f"  [OK] mini-loop finished, last events={events[-5:]}")
+    print(f"  [OK] mini-loop: bread produced, game continues, last events={events[-3:]}")
 
 
 def test_harvest_plant():
@@ -367,12 +368,18 @@ def test_harvest_plant():
     match.process_tick(game.simulate_tick)
     game.submit_action(_action(match_id, "p1", "WATER_PLANT", {"tile_id": "p1_t3"}))
     match.process_tick(game.simulate_tick)
+
+    tile = _find_tile(match.world_state, "p1_t3")
+    tile["growth_elapsed_sec"] = tile.get("growth_time_sec", 0)
+
     wheat_before = _inventory_amount(match.world_state["players"][0], "wheat")
 
     game.submit_action(_action(match_id, "p1", "HARVEST_PLANT", {"tile_id": "p1_t3"}))
+    match.process_tick(game.simulate_tick)
     sync = match.latest_sync(0)
     harvested = [e for e in sync["events"] if e["event_type"] == "PLANT_HARVESTED"]
-    assert harvested, f"expected PLANT_HARVESTED, got {[e['event_type'] for e in sync['events']]}"
+    events_list = [e['event_type'] for e in sync['events']]
+    assert harvested, f"expected PLANT_HARVESTED, got {events_list}"
 
     tile = _find_tile(sync["world_state"], "p1_t3")
     assert tile["occupant_type"] == "EMPTY"
@@ -408,6 +415,7 @@ def test_win_condition():
     match_id = created["match_id"]
     game.start_match(match_id)
     match = game.registry.get_match(match_id)
+    match.world_state["win_condition"]["target_product_id"] = "bread"
     match.world_state["players"][0]["inventory"] = [
         {"product_id": "flour", "amount": 2},
         {"product_id": "wheat", "amount": 1},

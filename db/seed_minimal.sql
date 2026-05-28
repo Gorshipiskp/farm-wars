@@ -25,9 +25,9 @@ VALUES ('wheat', 'Пшеница', 'RAW', 5),
 
 INSERT INTO plants (plant_id, product_id, display_name,
                     growth_time_sec, water_decay_per_tick, initial_water_level)
-VALUES ('wheat', 'wheat', 'Пшеница', 120, 2, 50),
-       ('corn', 'corn', 'Кукуруза', 150, 2, 40),
-       ('potato', 'potato', 'Картофель', 90, 1, 60);
+VALUES ('wheat', 'wheat', 'Пшеница', 5, 2, 50),
+       ('corn', 'corn', 'Кукуруза', 5, 2, 40),
+       ('potato', 'potato', 'Картофель', 5, 1, 60);
 
 -- ---------------------------------------------------------------------------
 -- Animals (1)

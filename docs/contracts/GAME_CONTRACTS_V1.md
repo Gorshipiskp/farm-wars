@@ -30,8 +30,8 @@
 - `WATER_PLANT`
 - `START_RECIPE`
 - `PLACE_ON_TILE`
+- `HARVEST_PLANT`
 - `BUY_PRODUCT` (server-only; не передаётся в C++ движок)
-- `HARVEST_PLANT` (server-only)
 
 ### `ServerEvent`
 
@@ -53,6 +53,7 @@
 - `RECIPE_REJECTED`
 - `PLANT_HARVESTED`
 - `HARVEST_FAILED`
+- `PLANT_DIED`
 
 ### `BUY_PRODUCT` — payload (клиент → сервер)
 
@@ -80,8 +81,29 @@
 
 - `initial_health: number` (default `100`)
 - `initial_water_level: number` (из `plants.initial_water_level` в SQLite)
+- `growth_time_sec: number` (из `plants.growth_time_sec` в SQLite)
+- `water_decay_per_tick: number` (из `plants.water_decay_per_tick` в SQLite)
 
 См. `docs/specs/engine_cpp/002.SANYA.PLACE_ON_TILE.md`, `docs/specs/server/002.NIKITA.SERVER_ENRICH_PLACE_ON_TILE.md`.
+
+### `HARVEST_PLANT` — payload (клиент → движок)
+
+- `tile_id: string` (required)
+
+Правила в движке:
+- Клетка существует, `owner_player_id == player_id`, `occupant_type == "PLANT"` → иначе `HARVEST_FAILED`
+- Если есть `growth_time_sec`: `growth_elapsed_sec >= growth_time_sec` → иначе `HARVEST_FAILED` (`NOT_RIPE`)
+- Успех: `+2` продукта в инвентарь, клетка → `EMPTY`, событие `PLANT_HARVESTED`
+- `water_level` грядки не изменяется при сборе
+
+### Пассивная фаза тика
+
+Каждый тик движок выполняет после обработки действий:
+- **Испарение**: все клетки с `water_level > 0` → `water_level -= water_decay_per_tick` (или 1 если поле отсутствует)
+- **Рост**: клетки с `occupant_type == "PLANT"` и `water_level > 0` → `growth_elapsed_sec += 1`
+- **Засыхание**: клетки с `occupant_type == "PLANT"` и `water_level == 0` → `health -= 10`
+- **Смерть**: `health <= 0` → клетка очищается, событие `PLANT_DIED` (`reason: "DEHYDRATED"`), `water_level` сохраняется
+- **Заводы**: `active_recipe_id != null` и `remaining_time_sec > 0` → `remaining_time_sec -= 1`; при достижении 0 → `RECIPE_FINISHED`, `+1` продукта, завод простаивает
 
 ---
 
@@ -149,6 +171,9 @@
 - `health: number` (optional)
 - `water_level: number` (optional)
 - `flags: string[]` (optional, например `MINED`, `INFECTED`)
+- `growth_elapsed_sec: number` (optional, сколько тиков растение уже растет)
+- `growth_time_sec: number` (optional, порог созревания из каталога)
+- `water_decay_per_tick: number` (optional, расход воды за тик)
 
 ### `FactoryState`
 
