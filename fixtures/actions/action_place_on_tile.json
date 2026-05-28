@@ -1,0 +1,12 @@
+{
+    "contract_version": "v1",
+    "player_id": "p1",
+    "action_type": "PLACE_ON_TILE",
+    "payload": {
+        "tile_id": "t3",
+        "plant_id": "wheat",
+        "initial_health": 100,
+        "initial_water_level": 50
+    },
+    "client_ts": 1000
+}

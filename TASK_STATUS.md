@@ -33,6 +33,7 @@
 | `docs/specs/architecture/002.NIKITA_LEAD.CONTRACT_FIXTURE_STUB_WORKFLOW.md` | `NIKITA_LEAD` | `Artifacts Layout Approved`     | `PLANNED`   | Нет                                  | 2026-05-27           |
 | `docs/specs/db/001.NIKITA.SQLITE_SCHEMA_AND_SEED_MINIMAL.md`                | `NIKITA`      | `Formula Fallback Approved`     | `DONE`      | Нет                                | 2026-05-28 |
 | `docs/specs/engine_cpp/001.SANYA.CPP_ENGINE_CORE_PYBIND_BASE.md`            | `SANYA`       | `Action Handling Approved`      | `DONE`      | Нет                                | 2026-05-27 |
+| `docs/specs/engine_cpp/002.SANYA.PLACE_ON_TILE.md`                           | `SANYA`       | `Stub vs C++ Match`             | `DONE`      | Нет. NIKITA нужно обогатить payload на сервере (initial_health, initial_water_level) | 2026-05-28 |
 | `docs/specs/server/001.NIKITA.SERVER_MATCH_JOIN_AND_TICK_LOOP.md`           | `NIKITA`      | `Win Condition Approved`        | `DONE`      | Нет                                  | 2026-05-28           |
 | `docs/specs/client/001.NIKITA.CLIENT_PYGAME_CORE_AND_MATCH_UI.md`           | `NIKITA`      | `UX Stability Approved`         | `DONE`      | Нет                                  | 2026-05-28           |
 | `docs/specs/gameplay/001.NIKITA_LEAD.VERTICAL_SLICE_PLAYABLE_MATCH_V1.md`   | `NIKITA_LEAD` | `Integration Baseline Approved` | `PLANNED`   | Baseline client/server/db готов; ждёт интеграционный sign-off | 2026-05-28           |
@@ -76,7 +77,7 @@
     - `architecture/001` — team sign-off контрактов v1.
     - `gameplay/001` — формальный вертикальный срез (`NIKITA_LEAD`).
 - **Блокеры**:
-    - `PLACE_ON_TILE` не реализован в `engine_cpp` / stub (зона `SANYA`).
+    - Нет.
 - **Взаимная проверка**:
     - `SANYA`: сверить, что server tick payload совместим с `simulate_tick`.
     - `NIKITA_LEAD`: принять baseline для `gameplay/001`.

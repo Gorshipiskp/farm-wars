@@ -194,6 +194,83 @@ def simulate_tick(input_dict):
                 events.append(_make_error_event(tick_id, "MISSING_FIELD",
                                                 f"Factory not found: {factory_id}"))
 
+        elif action_type == "PLACE_ON_TILE":
+            tile_id = payload["tile_id"]
+            plant_id = payload["plant_id"]
+            initial_health = payload["initial_health"]
+            initial_water = payload["initial_water_level"]
+
+            # Найти клетку
+            tile = None
+            for t in tiles:
+                if t["tile_id"] == tile_id:
+                    tile = t
+                    break
+
+            if tile is None:
+                events.append(_make_error_event(tick_id, "MISSING_FIELD",
+                                                f"Tile not found: {tile_id}"))
+            elif tile["owner_player_id"] != player_id:
+                events.append(_make_error_event(tick_id, "INVALID_TYPE",
+                                                f"Tile {tile_id} not owned by {player_id}"))
+            elif tile.get("occupant_type") and tile["occupant_type"] != "EMPTY":
+                events.append(_make_error_event(tick_id, "INVALID_TYPE",
+                                                f"Tile already occupied: {tile_id}"))
+            elif tile["zone_type"] != "PLANT":
+                events.append(_make_error_event(tick_id, "INVALID_TYPE",
+                                                f"Tile zone is {tile['zone_type']}, expected PLANT"))
+            else:
+                # Проверить инвентарь игрока
+                player = None
+                for p in next_world_state["players"]:
+                    if p["player_id"] == player_id:
+                        player = p
+                        break
+
+                if player is None:
+                    events.append(_make_error_event(tick_id, "MISSING_FIELD",
+                                                    f"Player not found: {player_id}"))
+                else:
+                    inv_found = False
+                    for idx, item in enumerate(player["inventory"]):
+                        if item["product_id"] == plant_id:
+                            if item["amount"] < 1:
+                                events.append(_make_error_event(
+                                    tick_id, "MISSING_FIELD",
+                                    f"No {plant_id} in inventory for player {player_id}"))
+                                inv_found = True
+                                break
+
+                            # Списать 1 единицу
+                            if item["amount"] == 1:
+                                del player["inventory"][idx]
+                            else:
+                                item["amount"] -= 1
+
+                            # Посадить растение
+                            tile["occupant_type"] = "PLANT"
+                            tile["occupant_id"] = plant_id
+                            tile["health"] = initial_health
+                            tile["water_level"] = initial_water
+
+                            events.append({
+                                "contract_version": "v1",
+                                "event_type": "PLANT_PLACED",
+                                "server_tick": tick_id,
+                                "payload": {
+                                    "tile_id": tile_id,
+                                    "plant_id": plant_id,
+                                    "player_id": player_id,
+                                },
+                            })
+                            inv_found = True
+                            break
+
+                    if not inv_found:
+                        events.append(_make_error_event(
+                            tick_id, "MISSING_FIELD",
+                            f"No {plant_id} in inventory for player {player_id}"))
+
         else:
             events.append(_make_error_event(tick_id, "INVALID_TYPE",
                                             f"Unknown action_type: {action_type}"))

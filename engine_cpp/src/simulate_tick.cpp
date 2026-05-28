@@ -317,6 +317,102 @@ py::dict simulate_tick(py::dict input) {
                 events.append(make_error_event(tick_id, "MISSING_FIELD", e.what()));
             }
 
+        } else if (action_type == "PLACE_ON_TILE") {
+            std::string tile_id = payload["tile_id"].cast<std::string>();
+            std::string plant_id = payload["plant_id"].cast<std::string>();
+            int initial_health = payload["initial_health"].cast<int>();
+            int initial_water = payload["initial_water_level"].cast<int>();
+
+            try {
+                // Найти клетку
+                py::dict tile = find_tile(tiles, tile_id);
+
+                // Проверить, что клетка принадлежит игроку
+                std::string owner = tile["owner_player_id"].cast<std::string>();
+                if (owner != player_id) {
+                    events.append(make_error_event(tick_id, "INVALID_TYPE",
+                        "Tile " + tile_id + " not owned by " + player_id));
+                }
+                // Проверить, что клетка пустая
+                else if (!tile["occupant_type"].is_none() &&
+                         tile["occupant_type"].cast<std::string>() != "EMPTY") {
+                    events.append(make_error_event(tick_id, "INVALID_TYPE",
+                        "Tile already occupied: " + tile_id));
+                }
+                // Проверить, что зона PLANT
+                else if (tile["zone_type"].cast<std::string>() != "PLANT") {
+                    std::string zone = tile["zone_type"].cast<std::string>();
+                    events.append(make_error_event(tick_id, "INVALID_TYPE",
+                        "Tile zone is " + zone + ", expected PLANT"));
+                }
+                // Проверить инвентарь и списать семечко
+                else {
+                    // Найти игрока в world_state.players
+                    py::list players_list = next_world_state["players"].cast<py::list>();
+                    bool player_found = false;
+                    bool inv_found = false;
+
+                    for (auto& p_item : players_list) {
+                        auto p = p_item.cast<py::dict>();
+                        if (p["player_id"].cast<std::string>() != player_id) continue;
+                        player_found = true;
+
+                        // Проверить инвентарь игрока
+                        py::list inventory = p["inventory"].cast<py::list>();
+                        for (size_t inv_idx = 0; inv_idx < inventory.size(); inv_idx++) {
+                            auto inv_item = inventory[inv_idx].cast<py::dict>();
+                            if (inv_item["product_id"].cast<std::string>() != plant_id) continue;
+
+                            int amount = inv_item["amount"].cast<int>();
+                            if (amount < 1) {
+                                events.append(make_error_event(tick_id, "MISSING_FIELD",
+                                    "No " + plant_id + " in inventory for player " + player_id));
+                                inv_found = true;
+                                break;
+                            }
+
+                            // Списать 1 единицу
+                            if (amount == 1) {
+                                // Удаляем позицию — создаем новый список без нее
+                                py::list new_inv;
+                                for (size_t j = 0; j < inventory.size(); j++) {
+                                    if (j != inv_idx) new_inv.append(inventory[j]);
+                                }
+                                p["inventory"] = new_inv;
+                            } else {
+                                inv_item["amount"] = amount - 1;
+                            }
+
+                            // Посадить растение на клетку
+                            tile["occupant_type"] = "PLANT";
+                            tile["occupant_id"] = plant_id;
+                            tile["health"] = initial_health;
+                            tile["water_level"] = initial_water;
+
+                            py::dict ev_payload;
+                            ev_payload["tile_id"] = tile_id;
+                            ev_payload["plant_id"] = plant_id;
+                            ev_payload["player_id"] = player_id;
+                            events.append(make_game_event("PLANT_PLACED", tick_id, ev_payload));
+
+                            inv_found = true;
+                            break;
+                        }
+                        break;
+                    }
+
+                    if (!player_found) {
+                        events.append(make_error_event(tick_id, "MISSING_FIELD",
+                            "Player not found: " + player_id));
+                    } else if (!inv_found) {
+                        events.append(make_error_event(tick_id, "MISSING_FIELD",
+                            "No " + plant_id + " in inventory for player " + player_id));
+                    }
+                }
+            } catch (const std::runtime_error& e) {
+                events.append(make_error_event(tick_id, "MISSING_FIELD", e.what()));
+            }
+
         } else {
             events.append(make_error_event(
                 tick_id, "INVALID_TYPE",

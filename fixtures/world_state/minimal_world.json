@@ -7,7 +7,10 @@
       "player_id": "p1",
       "display_name": "TestPlayer",
       "money_bestiki": 100,
-      "inventory": [],
+      "inventory": [
+        {"product_id": "wheat", "amount": 3},
+        {"product_id": "corn", "amount": 1}
+      ],
       "status_effects": []
     }
   ],
@@ -38,6 +41,15 @@
       {
         "tile_id": "t3",
         "zone_type": "PLANT",
+        "owner_player_id": "p1",
+        "occupant_type": "EMPTY",
+        "health": null,
+        "water_level": null,
+        "flags": []
+      },
+      {
+        "tile_id": "t4",
+        "zone_type": "ANIMAL",
         "owner_player_id": "p1",
         "occupant_type": "EMPTY",
         "health": null,

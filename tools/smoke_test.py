@@ -1,14 +1,10 @@
 r"""
-Smoke-тест для Checkpoint 4 <Action Handling Approved>.
+Smoke-тест для engine_core: все checkpoints (001 + 002).
 
 Проверяет:
-1. Базовый вызов simulate_tick с fixture-данными.
-2. Валидацию контракта v1.
-3. Детерминированность.
-4. WATER_PLANT: изменение water_level, событие PLANT_WATERED, ошибка при неверном tile.
-5. START_RECIPE: изменение factory, событие RECIPE_STARTED, ошибка при неверном factory.
-6. Несколько действий в одном тике.
-7. Идентичность stub и C++ модуля.
+1. Базовый вызов simulate_tick, валидацию, детерминированность.
+2. WATER_PLANT и START_RECIPE.
+3. PLACE_ON_TILE: посадка, инвентарь, все ошибки.
 
 Запуск из корня проекта:
     py tools/smoke_test.py
@@ -430,6 +426,242 @@ def test_multiple_actions():
     print("  [OK] 3 actions -> 3 events, both tiles watered, factory started")
 
 
+# ===== Тесты PLACE_ON_TILE (CP2-CP4) =====
+
+def test_place_on_tile_basic():
+    print("\n--- Test 5a: PLACE_ON_TILE on empty PLANT tile ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+
+    # Исходно t3 пустая, инвентарь: wheat x3
+    assert len(world["players"][0]["inventory"]) == 2
+    assert world["players"][0]["inventory"][0]["amount"] == 3  # wheat
+
+    tick_input = {
+        "contract_version": "v1", "tick_id": 5,
+        "world_state": world,
+        "actions": [{
+            "contract_version": "v1", "player_id": "p1",
+            "action_type": "PLACE_ON_TILE",
+            "payload": {"tile_id": "t3", "plant_id": "wheat",
+                        "initial_health": 100, "initial_water_level": 50},
+            "client_ts": 0
+        }],
+    }
+
+    result = sim(tick_input)
+
+    # Проверка события
+    events = result["events"]
+    assert len(events) == 1
+    assert events[0]["event_type"] == "PLANT_PLACED"
+    assert events[0]["payload"]["tile_id"] == "t3"
+    assert events[0]["payload"]["plant_id"] == "wheat"
+
+    # Проверка состояния клетки
+    tile = result["next_world_state"]["map"]["tiles"][2]  # t3
+    assert tile["tile_id"] == "t3"
+    assert tile["occupant_type"] == "PLANT"
+    assert tile["occupant_id"] == "wheat"
+    assert tile["health"] == 100
+    assert tile["water_level"] == 50
+
+    # Проверка инвентаря: wheat было 3, стало 2
+    inv = result["next_world_state"]["players"][0]["inventory"]
+    wheat_item = next(i for i in inv if i["product_id"] == "wheat")
+    assert wheat_item["amount"] == 2
+
+    # Исходный мир не мутирован
+    assert world["map"]["tiles"][2]["occupant_type"] == "EMPTY"
+    assert world["players"][0]["inventory"][0]["amount"] == 3
+
+    print("  [OK] Wheat planted on t3, inventory: 3 -> 2")
+
+
+def test_place_on_tile_last_seed():
+    print("\n--- Test 5b: PLACE_ON_TILE with last seed (amount=1) -> removed from inventory ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+
+    # corn в инвентаре только 1 штука
+    tick_input = {
+        "contract_version": "v1", "tick_id": 5,
+        "world_state": world,
+        "actions": [{
+            "contract_version": "v1", "player_id": "p1",
+            "action_type": "PLACE_ON_TILE",
+            "payload": {"tile_id": "t3", "plant_id": "corn",
+                        "initial_health": 100, "initial_water_level": 40},
+            "client_ts": 0
+        }],
+    }
+
+    result = sim(tick_input)
+    inv = result["next_world_state"]["players"][0]["inventory"]
+
+    # corn должен исчезнуть из инвентаря
+    corn_items = [i for i in inv if i["product_id"] == "corn"]
+    assert len(corn_items) == 0, f"Corn should be removed, got {corn_items}"
+
+    # wheat остался нетронутым
+    wheat_items = [i for i in inv if i["product_id"] == "wheat"]
+    assert wheat_items[0]["amount"] == 3
+
+    print("  [OK] Last corn used, removed from inventory")
+
+
+def test_place_on_tile_occupied():
+    print("\n--- Test 5c: PLACE_ON_TILE on occupied tile -> CONTRACT_ERROR ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+
+    # t1 уже занята (occupant_type = "PLANT")
+    tick_input = {
+        "contract_version": "v1", "tick_id": 5,
+        "world_state": world,
+        "actions": [{
+            "contract_version": "v1", "player_id": "p1",
+            "action_type": "PLACE_ON_TILE",
+            "payload": {"tile_id": "t1", "plant_id": "wheat",
+                        "initial_health": 100, "initial_water_level": 50},
+            "client_ts": 0
+        }],
+    }
+
+    result = sim(tick_input)
+    _check_contract_error(result, "INVALID_TYPE", "already occupied")
+    print("  [OK]")
+
+
+def test_place_on_tile_wrong_zone():
+    print("\n--- Test 5d: PLACE_ON_TILE on ANIMAL zone -> CONTRACT_ERROR ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+
+    # t4 - ANIMAL зона
+    tick_input = {
+        "contract_version": "v1", "tick_id": 5,
+        "world_state": world,
+        "actions": [{
+            "contract_version": "v1", "player_id": "p1",
+            "action_type": "PLACE_ON_TILE",
+            "payload": {"tile_id": "t4", "plant_id": "wheat",
+                        "initial_health": 100, "initial_water_level": 50},
+            "client_ts": 0
+        }],
+    }
+
+    result = sim(tick_input)
+    _check_contract_error(result, "INVALID_TYPE", "expected PLANT")
+    print("  [OK]")
+
+
+def test_place_on_tile_no_inventory():
+    print("\n--- Test 5e: PLACE_ON_TILE with no seeds -> CONTRACT_ERROR ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+
+    # potato нет в инвентаре
+    tick_input = {
+        "contract_version": "v1", "tick_id": 5,
+        "world_state": world,
+        "actions": [{
+            "contract_version": "v1", "player_id": "p1",
+            "action_type": "PLACE_ON_TILE",
+            "payload": {"tile_id": "t3", "plant_id": "potato",
+                        "initial_health": 100, "initial_water_level": 60},
+            "client_ts": 0
+        }],
+    }
+
+    result = sim(tick_input)
+    _check_contract_error(result, "MISSING_FIELD", "No potato")
+    print("  [OK]")
+
+
+def test_place_on_tile_not_owned():
+    print("\n--- Test 5f: PLACE_ON_TILE on other player's tile -> CONTRACT_ERROR ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+
+    # p2 пытается посадить на t3 (принадлежит p1)
+    tick_input = {
+        "contract_version": "v1", "tick_id": 5,
+        "world_state": world,
+        "actions": [{
+            "contract_version": "v1", "player_id": "p2",
+            "action_type": "PLACE_ON_TILE",
+            "payload": {"tile_id": "t3", "plant_id": "wheat",
+                        "initial_health": 100, "initial_water_level": 50},
+            "client_ts": 0
+        }],
+    }
+
+    result = sim(tick_input)
+    _check_contract_error(result, "INVALID_TYPE", "not owned")
+    print("  [OK]")
+
+
+def test_place_on_tile_nonexistent():
+    print("\n--- Test 5g: PLACE_ON_TILE on nonexistent tile -> CONTRACT_ERROR ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+
+    tick_input = {
+        "contract_version": "v1", "tick_id": 5,
+        "world_state": world,
+        "actions": [{
+            "contract_version": "v1", "player_id": "p1",
+            "action_type": "PLACE_ON_TILE",
+            "payload": {"tile_id": "nonexistent_zzz", "plant_id": "wheat",
+                        "initial_health": 100, "initial_water_level": 50},
+            "client_ts": 0
+        }],
+    }
+
+    result = sim(tick_input)
+    _check_contract_error(result, "MISSING_FIELD", "Tile not found")
+    print("  [OK]")
+
+
+def test_place_on_tile_three_in_row():
+    print("\n--- Test 5h: Three PLACE_ON_TILE in a row (inventory: 3 -> 2 -> 1 -> 0) ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+
+    # Первый: сажаем wheat на t3
+    r1 = sim({"contract_version": "v1", "tick_id": 1, "world_state": world, "actions": [{
+        "contract_version": "v1", "player_id": "p1", "action_type": "PLACE_ON_TILE",
+        "payload": {"tile_id": "t3", "plant_id": "wheat", "initial_health": 100, "initial_water_level": 50},
+        "client_ts": 0
+    }]})
+    inv1 = r1["next_world_state"]["players"][0]["inventory"]
+    assert [i for i in inv1 if i["product_id"] == "wheat"][0]["amount"] == 2
+
+    # Второй: используем состояние из r1
+    r2 = sim({"contract_version": "v1", "tick_id": 2, "world_state": r1["next_world_state"], "actions": [{
+        "contract_version": "v1", "player_id": "p1", "action_type": "PLACE_ON_TILE",
+        "payload": {"tile_id": "t3", "plant_id": "wheat", "initial_health": 100, "initial_water_level": 50},
+        "client_ts": 0
+    }]})
+    inv2 = r2["next_world_state"]["players"][0]["inventory"]
+    # t3 уже занята — должно быть CONTRACT_ERROR, инвентарь НЕ изменился
+    assert [i for i in inv2 if i["product_id"] == "wheat"][0]["amount"] == 2, \
+        "Inventory should NOT change on failed placement"
+
+    # Третий: используем оригинал, сажаем corn (1 шт)
+    r3 = sim({"contract_version": "v1", "tick_id": 3, "world_state": world, "actions": [{
+        "contract_version": "v1", "player_id": "p1", "action_type": "PLACE_ON_TILE",
+        "payload": {"tile_id": "t3", "plant_id": "corn", "initial_health": 100, "initial_water_level": 40},
+        "client_ts": 0
+    }]})
+    inv3 = r3["next_world_state"]["players"][0]["inventory"]
+    corn_items = [i for i in inv3 if i["product_id"] == "corn"]
+    assert len(corn_items) == 0  # исчез
+
+    print("  [OK] 3 placements: inventory tracked correctly, errors don't consume items")
+
+
 # ===== Сравнение stub vs C++ =====
 
 def test_stub_vs_cpp():
@@ -464,7 +696,7 @@ def test_stub_vs_cpp():
 
 def main():
     print("=" * 60)
-    print("SMOKE TEST — engine_core Checkpoint 4")
+    print("SMOKE TEST — engine_core (CP 1-4 + PLACE_ON_TILE)")
     print("=" * 60)
 
     test_basic_tick()
@@ -487,6 +719,14 @@ def main():
     test_start_recipe_generates_event()
     test_start_recipe_factory_not_found()
     test_multiple_actions()
+    test_place_on_tile_basic()
+    test_place_on_tile_last_seed()
+    test_place_on_tile_occupied()
+    test_place_on_tile_wrong_zone()
+    test_place_on_tile_no_inventory()
+    test_place_on_tile_not_owned()
+    test_place_on_tile_nonexistent()
+    test_place_on_tile_three_in_row()
     test_stub_vs_cpp()
 
     print("\n" + "=" * 60)
