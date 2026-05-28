@@ -128,4 +128,4 @@ Checkpoint `Module Boundaries Approved` считается пройденным,
 
 Сеть MVP: HTTP JSON, порт `8765`, сервер `0.0.0.0` (см. `DEC-010` в `DECISIONS.md`).
 
-Не в зоне v1-реализации: WebSocket, `PLACE_ON_TILE` в движке (ожидается `SANYA`).
+Не в зоне v1-реализации: WebSocket. `PLACE_ON_TILE`: движок (`SANYA`) + обогащение на сервере (`NIKITA`, `server/002`).

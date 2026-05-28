@@ -172,6 +172,20 @@
     - `docs/specs/server/001.NIKITA.SERVER_MATCH_JOIN_AND_TICK_LOOP.md`
     - `docs/specs/client/001.NIKITA.CLIENT_PYGAME_CORE_AND_MATCH_UI.md`
 
+### DEC-012: Обогащение `PLACE_ON_TILE` на сервере перед движком
+
+- **Дата**: 2026-05-28
+- **Статус**: Accepted
+- **Контекст**: движок (`002.SANYA`) не читает SQLite; клиент не должен знать `initial_water_level` из каталога.
+- **Решение**: сервер в `action_enricher.py` дополняет payload из `GameContentCatalog` перед `simulate_tick`; неизвестный `plant_id` → `CONTRACT_ERROR` без вызова движка.
+- **Альтернативы**: передавать каталог в C++; клиент читает БД.
+- **Последствия**:
+    - плюс: границы архитектуры сохранены (C++ без БД);
+    - плюс: клиент остаётся тонким.
+- **Связанные ТЗ**:
+    - `docs/specs/server/002.NIKITA.SERVER_ENRICH_PLACE_ON_TILE.md`
+    - `docs/specs/engine_cpp/002.SANYA.PLACE_ON_TILE.md`
+
 ### DEC-011: Формула цены рецепта — `time_coef` у каждого завода
 
 - **Дата**: 2026-05-28

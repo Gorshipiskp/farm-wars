@@ -26,6 +26,9 @@ def create_initial_world(
     """
     template = _load_fixture_template()
     win_product = catalog.default_win_product_id()
+    starter_inventory = []
+    if template.get("players"):
+        starter_inventory = copy.deepcopy(template["players"][0].get("inventory", []))
 
     world_players = []
     all_tiles = []
@@ -39,7 +42,7 @@ def create_initial_world(
             "player_id": player_id,
             "display_name": display_name,
             "money_bestiki": money,
-            "inventory": [],
+            "inventory": copy.deepcopy(starter_inventory),
             "status_effects": [],
         })
 

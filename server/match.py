@@ -7,6 +7,7 @@ from collections import deque
 from dataclasses import dataclass, field
 
 from db.loader import GameContentCatalog
+from server.action_enricher import enrich_actions_for_tick
 from server.world_factory import create_initial_world
 
 
@@ -78,16 +79,19 @@ class Match:
             self.action_queue.clear()
 
             tick_id = self.world_state.get("tick_id", 0) + 1
+            engine_actions, pre_events = enrich_actions_for_tick(
+                actions, self.catalog, tick_id
+            )
             tick_input = {
                 "contract_version": "v1",
                 "tick_id": tick_id,
                 "world_state": self.world_state,
-                "actions": actions,
+                "actions": engine_actions,
             }
 
             result = simulate_tick(tick_input)
             self.world_state = result["next_world_state"]
-            events = list(result.get("events", []))
+            events = pre_events + list(result.get("events", []))
 
             events.extend(self._advance_factories(tick_id))
             winner = self._check_win()

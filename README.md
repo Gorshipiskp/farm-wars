@@ -196,7 +196,7 @@ py tools/test_client_net.py    # нужен запущенный сервер
 
 - клик — выбор своей клетки
 - **W** — полив (`WATER_PLANT`)
-- **T** — посадка (`PLACE_ON_TILE`; в движке пока может быть ошибка — зона `SANYA`)
+- **T** — посадка (`PLACE_ON_TILE`; сервер подставляет параметры из БД)
 - **B** — запуск рецепта победы на заводе (`START_RECIPE`)
 - **Esc** — вернуться в lobby
 
@@ -236,7 +236,9 @@ py tools/test_client_net.py    # нужен запущенный сервер
 - `db/001.NIKITA.SQLITE_SCHEMA_AND_SEED_MINIMAL.md`
 - `engine_cpp/001.SANYA.CPP_ENGINE_CORE_PYBIND_BASE.md`
 - `server/001.NIKITA.SERVER_MATCH_JOIN_AND_TICK_LOOP.md`
+- `server/002.NIKITA.SERVER_ENRICH_PLACE_ON_TILE.md`
 - `client/001.NIKITA.CLIENT_PYGAME_CORE_AND_MATCH_UI.md`
+- `engine_cpp/002.SANYA.PLACE_ON_TILE.md`
 - `gameplay/001.NIKITA_LEAD.VERTICAL_SLICE_PLAYABLE_MATCH_V1.md`
 
 ---
@@ -254,7 +256,7 @@ py tools/test_client_net.py    # нужен запущенный сервер
 
 1. Закрыть sign-off архитектуры `v1` (`NIKITA_LEAD`)
 2. Вертикальный срез end-to-end (`gameplay/001` — `NIKITA_LEAD`)
-3. `PLACE_ON_TILE` и расширение симуляции (`SANYA`)
+3. Расширение симуляции в движке (`SANYA`, следующие action-типы)
 4. События / PvP из декларативной БД в геймплей
 
 ---
@@ -268,4 +270,4 @@ py tools/test_client_net.py    # нужен запущенный сервер
 | Матч до победы по целевому продукту           | есть (рецепт → инвентарь → `MATCH_FINISHED`) |
 | Контент из SQLite                             | есть (базовый seed)                          |
 | Полный контент (10 растений, PvP в матче)     | впереди                                      |
-| `PLACE_ON_TILE` в движке                      | впереди (`SANYA`)                            |
+| `PLACE_ON_TILE` (движок + server enrich)      | есть (`002.SANYA` + `server/002`)            |

@@ -41,10 +41,22 @@
 Примеры `event_type` для `v1`:
 
 - `PLANT_WATERED`
+- `PLANT_PLACED`
 - `RECIPE_STARTED`
 - `RECIPE_FINISHED`
 - `MATCH_FINISHED`
 - `CONTRACT_ERROR`
+
+### `PLACE_ON_TILE` — payload для движка (после обогащения сервером)
+
+Клиент отправляет: `{tile_id, plant_id}`.
+
+Сервер добавляет перед `simulate_tick`:
+
+- `initial_health: number` (default `100`)
+- `initial_water_level: number` (из `plants.initial_water_level` в SQLite)
+
+См. `docs/specs/engine_cpp/002.SANYA.PLACE_ON_TILE.md`, `docs/specs/server/002.NIKITA.SERVER_ENRICH_PLACE_ON_TILE.md`.
 
 ---
 

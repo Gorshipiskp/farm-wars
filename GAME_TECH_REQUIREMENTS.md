@@ -465,7 +465,7 @@ Data/API Contracts, Implementation Plan, Checkpoints, Acceptance Criteria, Test 
 | 4 | Server join/tick/win + HTTP | **готово** (`server/001`) |
 | 5 | Client lobby/match + LAN IP | **готово** (`client/001`) |
 | 6 | Вертикальный срез sign-off | `gameplay/001` |
-| 7 | `PLACE_ON_TILE` в движке | `SANYA` |
+| 7 | `PLACE_ON_TILE` + server enrich | **готово** (`002.SANYA` + `server/002`) |
 | 8 | События / PvP в геймплее | декларативно в БД, логика впереди |
 | 9 | Полный контент + UX | впереди |
 
