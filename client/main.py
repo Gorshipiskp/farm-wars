@@ -7,16 +7,25 @@ Run (server must be up):
     py tools/init_db.py --seed
     py -m server
     py -m client
+    py -m client --host 192.168.0.5 --port 8765
 
 Requires: pip install -r client/requirements.txt
 """
 
+import argparse
 import logging
+import os
 import sys
 
 import pygame
 
-from client.net import ServerClient, ServerError
+from client.net import (
+    DEFAULT_HOST,
+    DEFAULT_PORT,
+    ServerClient,
+    ServerError,
+    parse_server_address,
+)
 from client.session import ClientSession
 from client.sync_poller import SyncPoller
 
@@ -24,7 +33,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 log = logging.getLogger("farm_wars.client")
 
 # --- Layout ---
-WIDTH, HEIGHT = 960, 640
+WIDTH, HEIGHT = 960, 700
 TILE_SIZE = 72
 GRID_X, GRID_Y = 24, 120
 PANEL_X = 420
@@ -93,7 +102,7 @@ class Button:
 
 
 class FarmWarsApp:
-    def __init__(self):
+    def __init__(self, server_host: str = DEFAULT_HOST, server_port: int = DEFAULT_PORT):
         pygame.init()
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
         pygame.display.set_caption("Farm Wars")
@@ -102,24 +111,47 @@ class FarmWarsApp:
         self.font_sm = pygame.font.SysFont("consolas", 14)
         self.font_lg = pygame.font.SysFont("consolas", 28)
 
-        self.net = ServerClient()
         self.session = ClientSession()
-        self.poller = SyncPoller(self.net, self.session)
         self.state = STATE_LOBBY
-        self.status_msg = "Create or join a match"
+        self.status_msg = "Enter server IP and create or join"
         self.selected_tile_id: str | None = None
 
-        self.field_name = TextField((40, 140, 320, 36), "Player name")
-        self.field_code = TextField((40, 220, 320, 36), "Join code")
-        self.btn_create = Button((40, 300, 150, 40), "Create")
-        self.btn_join = Button((210, 300, 150, 40), "Join")
-        self.btn_start = Button((40, 360, 320, 40), "Start match")
+        self.field_server = TextField((40, 100, 220, 36), "Server IP")
+        self.field_server.text = server_host
+        self.field_port = TextField((270, 100, 90, 36), "8765")
+        self.field_port.text = str(server_port)
+        self.field_name = TextField((40, 180, 320, 36), "Player name")
+        self.field_code = TextField((40, 260, 320, 36), "Join code")
+        self.btn_connect = Button((40, 320, 150, 40), "Connect")
+        self.btn_create = Button((210, 320, 150, 40), "Create")
+        self.btn_join = Button((40, 380, 150, 40), "Join")
+        self.btn_start = Button((210, 380, 150, 40), "Start")
+
+        self.net = ServerClient()
+        self.poller = SyncPoller(self.net, self.session)
+        self._refresh_net_client()
+
+    def _refresh_net_client(self) -> str:
+        base_url = parse_server_address(self.field_server.text, self.field_port.text)
+        self.net = ServerClient(base_url)
+        self.poller.stop()
+        self.poller = SyncPoller(self.net, self.session)
+        return base_url
+
+    def _check_server(self) -> bool:
+        try:
+            base = self._refresh_net_client()
+            health = self.net.health()
+            engine = health.get("engine", "?")
+            self.status_msg = f"Connected to {base} ({engine})"
+            self.session.clear_error()
+            return True
+        except ServerError as exc:
+            self.status_msg = f"Cannot reach server: {exc.message}"
+            return False
 
     def run(self):
-        try:
-            self.net.health()
-        except ServerError as exc:
-            self.status_msg = f"Server offline: {exc.message}"
+        self._check_server()
 
         running = True
         while running:
@@ -147,9 +179,13 @@ class FarmWarsApp:
     # --- Lobby ---
 
     def _lobby_event(self, event):
+        self.field_server.handle_event(event)
+        self.field_port.handle_event(event)
         self.field_name.handle_event(event)
         self.field_code.handle_event(event)
 
+        if self.btn_connect.clicked(event):
+            self._check_server()
         if self.btn_create.clicked(event):
             self._do_create()
         if self.btn_join.clicked(event):
@@ -158,6 +194,8 @@ class FarmWarsApp:
             self._do_start()
 
     def _do_create(self):
+        if not self._check_server():
+            return
         name = self.field_name.text.strip() or "Host"
         try:
             res = self.net.create_match(name)
@@ -173,6 +211,8 @@ class FarmWarsApp:
             self.status_msg = f"{exc.error_code}: {exc.message}"
 
     def _do_join(self):
+        if not self._check_server():
+            return
         name = self.field_name.text.strip() or "Guest"
         code = self.field_code.text.strip().upper()
         if not code:
@@ -194,6 +234,8 @@ class FarmWarsApp:
         if not self.session.match_id:
             self.status_msg = "Create or join first"
             return
+        if not self._check_server():
+            return
         try:
             self.net.start_match(self.session.match_id)
             self.state = STATE_MATCH
@@ -204,13 +246,20 @@ class FarmWarsApp:
             self.status_msg = f"{exc.error_code}: {exc.message}"
 
     def _draw_lobby(self, mouse):
-        self.screen.blit(self.font_lg.render("Farm Wars — Lobby", True, TEXT), (40, 40))
+        self.screen.blit(self.font_lg.render("Farm Wars — Lobby", True, TEXT), (40, 32))
+        self.screen.blit(self.font_sm.render("Server IP", True, (180, 180, 170)), (40, 82))
+        self.screen.blit(self.font_sm.render("Port", True, (180, 180, 170)), (270, 82))
+        self.field_server.draw(self.screen, self.font)
+        self.field_port.draw(self.screen, self.font)
         self.field_name.draw(self.screen, self.font)
         self.field_code.draw(self.screen, self.font)
+        self.btn_connect.draw(self.screen, self.font, mouse)
         self.btn_create.draw(self.screen, self.font, mouse)
         self.btn_join.draw(self.screen, self.font, mouse)
         if self.session.is_host and self.session.match_id:
             self.btn_start.draw(self.screen, self.font, mouse)
+        url = parse_server_address(self.field_server.text, self.field_port.text)
+        self.screen.blit(self.font_sm.render(f"URL: {url}", True, (150, 160, 150)), (40, 455))
         self._draw_status()
 
     # --- Match ---
@@ -381,12 +430,27 @@ class FarmWarsApp:
             y += 22
 
     def _draw_status(self):
-        self.screen.blit(self.font.render(self.status_msg, True, TEXT), (40, 430))
+        y = 430 if self.state == STATE_LOBBY else HEIGHT - 28
+        self.screen.blit(self.font.render(self.status_msg, True, TEXT), (40, y))
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Farm Wars client")
+    parser.add_argument(
+        "--host",
+        default=os.environ.get("FARM_WARS_SERVER_HOST", DEFAULT_HOST),
+        help="Server IP or hostname (default 127.0.0.1)",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("FARM_WARS_SERVER_PORT", str(DEFAULT_PORT))),
+        help="Server port (default 8765)",
+    )
+    args = parser.parse_args()
+
     try:
-        FarmWarsApp().run()
+        FarmWarsApp(server_host=args.host, server_port=args.port).run()
     except pygame.error as exc:
         log.error("Pygame failed (display available?): %s", exc)
         return 1

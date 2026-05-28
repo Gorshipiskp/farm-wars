@@ -16,7 +16,15 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from client.net import ServerClient, ServerError
+from client.net import ServerClient, ServerError, parse_server_address
+
+
+def test_parse_server_address():
+    print("\n--- parse_server_address ---")
+    assert parse_server_address("192.168.1.10", "8765") == "http://192.168.1.10:8765"
+    assert parse_server_address("192.168.1.10:9000", "8765") == "http://192.168.1.10:9000"
+    assert parse_server_address("http://10.0.0.2:8765", "1") == "http://10.0.0.2:8765"
+    print("  [OK]")
 
 
 def test_offline_error():
@@ -67,6 +75,7 @@ def main():
     print("=" * 60)
     print("CLIENT NET TEST — client/001 (NIKITA zone)")
     print("=" * 60)
+    test_parse_server_address()
     test_offline_error()
     test_lobby_flow_http()
     print("\n" + "=" * 60)

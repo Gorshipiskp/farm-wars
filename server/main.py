@@ -6,6 +6,7 @@ Run from repo root:
     py -m server
 
 Environment:
+    FARM_WARS_HOST      — bind address (default 0.0.0.0 = LAN + localhost)
     FARM_WARS_PORT      — HTTP port (default 8765)
     FARM_WARS_TICK_SEC  — tick interval seconds (default 1.0)
     FARM_WARS_DB_PATH   — SQLite path
@@ -21,6 +22,7 @@ if ROOT not in sys.path:
 
 from server.game_server import GameServer
 from server.http_api import serve
+from server.network_util import guess_lan_ipv4
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,9 +49,15 @@ def run() -> int:
 
     game.start_ticks()
 
-    host = os.environ.get("FARM_WARS_HOST", "127.0.0.1")
+    host = os.environ.get("FARM_WARS_HOST", "0.0.0.0")
     port = int(os.environ.get("FARM_WARS_PORT", "8765"))
     httpd = serve(game, host=host, port=port)
+
+    if host in ("0.0.0.0", ""):
+        lan_ip = guess_lan_ipv4()
+        if lan_ip:
+            log.info("Clients on your network: http://%s:%s", lan_ip, port)
+        log.info("Clients on this PC: http://127.0.0.1:%s", port)
 
     try:
         httpd.serve_forever()

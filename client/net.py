@@ -11,7 +11,39 @@ import urllib.error
 import urllib.request
 
 
-DEFAULT_BASE = os.environ.get("FARM_WARS_SERVER", "http://127.0.0.1:8765")
+DEFAULT_HOST = os.environ.get("FARM_WARS_SERVER_HOST", "127.0.0.1")
+DEFAULT_PORT = int(os.environ.get("FARM_WARS_SERVER_PORT", "8765"))
+DEFAULT_BASE = os.environ.get(
+    "FARM_WARS_SERVER",
+    f"http://{DEFAULT_HOST}:{DEFAULT_PORT}",
+)
+
+
+def parse_server_address(host_text: str, port_text: str = "8765") -> str:
+    """
+    Build server base URL from lobby fields.
+
+    Accepts:
+    - full URL: http://192.168.0.5:8765
+    - host:port in host field: 192.168.0.5:8765
+    - host + separate port field
+    """
+    host_text = (host_text or "").strip()
+    port_text = (port_text or "").strip() or "8765"
+
+    if not host_text:
+        host_text = DEFAULT_HOST
+
+    if host_text.startswith("http://") or host_text.startswith("https://"):
+        return host_text.rstrip("/")
+
+    if ":" in host_text:
+        host_part, maybe_port = host_text.rsplit(":", 1)
+        if maybe_port.isdigit():
+            return f"http://{host_part}:{maybe_port}"
+
+    port = int(port_text)
+    return f"http://{host_text}:{port}"
 
 
 class ServerError(Exception):
