@@ -31,10 +31,10 @@
 |-----------------------------------------------------------------------------|---------------|---------------------------------|-------------|--------------------------------------|----------------------|
 | `docs/specs/architecture/001.NIKITA_LEAD.ARCHITECTURE_CONTRACTS_V1.md`      | `NIKITA_LEAD` | `Team Sign-Off`                 | `IN_PROGRESS` | Ожидается финальное подтверждение от `NIKITA` и `SANYA` | 2026-05-27 |
 | `docs/specs/architecture/002.NIKITA_LEAD.CONTRACT_FIXTURE_STUB_WORKFLOW.md` | `NIKITA_LEAD` | `Artifacts Layout Approved`     | `PLANNED`   | Нет                                  | 2026-05-27           |
-| `docs/specs/db/001.NIKITA.SQLITE_SCHEMA_AND_SEED_MINIMAL.md`                | `NIKITA`      | `Schema Approved`               | `IN_PROGRESS` | Нет                                | 2026-05-27 |
+| `docs/specs/db/001.NIKITA.SQLITE_SCHEMA_AND_SEED_MINIMAL.md`                | `NIKITA`      | `Formula Fallback Approved`     | `DONE`      | Нет                                | 2026-05-28 |
 | `docs/specs/engine_cpp/001.SANYA.CPP_ENGINE_CORE_PYBIND_BASE.md`            | `SANYA`       | `Action Handling Approved`      | `DONE`      | Нет                                | 2026-05-27 |
-| `docs/specs/server/001.NIKITA.SERVER_MATCH_JOIN_AND_TICK_LOOP.md`           | `NIKITA`      | `Join Flow Approved`            | `PLANNED`   | Зависит от контракта `v1`            | 2026-05-27           |
-| `docs/specs/client/001.NIKITA.CLIENT_PYGAME_CORE_AND_MATCH_UI.md`           | `NIKITA`      | `Lobby Flow Approved`           | `PLANNED`   | Зависит от server create/join API    | 2026-05-27           |
+| `docs/specs/server/001.NIKITA.SERVER_MATCH_JOIN_AND_TICK_LOOP.md`           | `NIKITA`      | `Win Condition Approved`        | `DONE`      | Нет                                  | 2026-05-28           |
+| `docs/specs/client/001.NIKITA.CLIENT_PYGAME_CORE_AND_MATCH_UI.md`           | `NIKITA`      | `UX Stability Approved`         | `DONE`      | Нет                                  | 2026-05-28           |
 | `docs/specs/gameplay/001.NIKITA_LEAD.VERTICAL_SLICE_PLAYABLE_MATCH_V1.md`   | `NIKITA_LEAD` | `Integration Baseline Approved` | `PLANNED`   | Зависит от client/server/db baseline | 2026-05-27           |
 
 ---

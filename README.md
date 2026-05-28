@@ -124,6 +124,36 @@
 
 ---
 
+## Быстрый старт БД и сервера
+
+```bash
+py tools/init_db.py --seed
+py tools/verify_seed.py
+py tools/test_db_pricing.py
+py tools/test_server_flow.py
+py -m server
+```
+
+HTTP API (после `py -m server`, порт `8765`):
+
+- `POST /api/matches/create` — создать матч (`player_name` опционально)
+- `POST /api/matches/join` — `{join_code, player_name}`
+- `POST /api/matches/start` — `{match_id}`
+- `POST /api/matches/action` — `ClientActionEnvelope`
+- `GET /api/matches/{match_id}/sync?since_tick=0` — `StateSyncEvent`
+
+Клиент (pygame, зона `NIKITA`):
+
+```bash
+pip install -r client/requirements.txt
+py -m server
+py -m client
+```
+
+Управление в матче: клик по клетке, `W` полив, `T` посадка (`PLACE_ON_TILE`), `B` запуск рецепта, `Esc` в lobby.
+
+---
+
 ## Стартовый набор критичных ТЗ уже создан
 
 Расположение: `docs/specs/`
