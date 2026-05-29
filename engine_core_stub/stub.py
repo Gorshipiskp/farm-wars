@@ -165,11 +165,13 @@ def simulate_tick(input_dict):
                     break
 
             if tile is None:
-                events.append(_make_error_event(tick_id, "MISSING_FIELD", f"Tile not found: {tile_id}"), player_id=player_id)
+                events.append(_make_error_event(
+                    tick_id, "MISSING_FIELD", f"Tile not found: {tile_id}", player_id=player_id))
             elif tile.get("owner_player_id") != player_id:
                 events.append(_make_error_event(
                     tick_id, "INVALID_TYPE",
                     f"Tile {tile_id} not owned by {player_id}",
+                    player_id=player_id,
                 ))
             else:
                 tile["water_level"] = 100
@@ -221,8 +223,9 @@ def simulate_tick(input_dict):
                     break
 
             if not found:
-                events.append(_make_error_event(tick_id, "MISSING_FIELD",
-                    f"Factory not found: {factory_id}", player_id=player_id))
+                events.append(_make_error_event(
+                    tick_id, "MISSING_FIELD", f"Factory not found: {factory_id}",
+                    player_id=player_id))
 
         elif action_type == "PLACE_ON_TILE":
             tile_id = payload["tile_id"]
@@ -239,13 +242,20 @@ def simulate_tick(input_dict):
                     break
 
             if tile is None:
-                events.append(_make_error_event(tick_id, "MISSING_FIELD", f"Tile not found: {tile_id}"), player_id=player_id)
+                events.append(_make_error_event(
+                    tick_id, "MISSING_FIELD", f"Tile not found: {tile_id}", player_id=player_id))
             elif tile["owner_player_id"] != player_id:
-                events.append(_make_error_event(tick_id, "INVALID_TYPE", f"Tile {tile_id} not owned by {player_id}"), player_id=player_id)
+                events.append(_make_error_event(
+                    tick_id, "INVALID_TYPE", f"Tile {tile_id} not owned by {player_id}",
+                    player_id=player_id))
             elif tile.get("occupant_type") and tile["occupant_type"] != "EMPTY":
-                events.append(_make_error_event(tick_id, "INVALID_TYPE", f"Tile already occupied: {tile_id}"), player_id=player_id)
+                events.append(_make_error_event(
+                    tick_id, "INVALID_TYPE", f"Tile already occupied: {tile_id}",
+                    player_id=player_id))
             elif tile["zone_type"] != "PLANT":
-                events.append(_make_error_event(tick_id, "INVALID_TYPE", f"Tile zone is {tile['zone_type']}, expected PLANT"), player_id=player_id)
+                events.append(_make_error_event(
+                    tick_id, "INVALID_TYPE", f"Tile zone is {tile['zone_type']}, expected PLANT",
+                    player_id=player_id))
             else:
                 # Проверить инвентарь игрока
                 player = None
@@ -255,7 +265,9 @@ def simulate_tick(input_dict):
                         break
 
                 if player is None:
-                    events.append(_make_error_event(tick_id, "MISSING_FIELD", f"Player not found: {player_id}"), player_id=player_id)
+                    events.append(_make_error_event(
+                        tick_id, "MISSING_FIELD", f"Player not found: {player_id}",
+                        player_id=player_id))
                 else:
                     inv_found = False
                     for idx, item in enumerate(player["inventory"]):
@@ -264,7 +276,8 @@ def simulate_tick(input_dict):
                         if item["amount"] < 1:
                             events.append(_make_error_event(
                                 tick_id, "MISSING_FIELD",
-                                f"No {seed_product_id} in inventory for player {player_id}"))
+                                f"No {seed_product_id} in inventory for player {player_id}",
+                                player_id=player_id))
                             inv_found = True
                             break
 
@@ -414,7 +427,9 @@ def simulate_tick(input_dict):
                     affected += 1
 
             else:
-                events.append(_make_error_event(tick_id, "INVALID_TYPE", f"Unknown event_type: {event_type}"), player_id=player_id)
+                events.append(_make_error_event(
+                    tick_id, "INVALID_TYPE", f"Unknown event_type: {event_type}",
+                    player_id=player_id))
 
             if affected > 0 or event_type in (
                 "DROUGHT", "RAIN", "FLOOD", "EARTHQUAKE", "EPIDEMIC",

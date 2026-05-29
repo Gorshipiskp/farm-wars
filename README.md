@@ -1,147 +1,162 @@
 # Farm Wars
 
-Мультиплеерный 2D farm-sim проект для учебной практики, где команда разрабатывает игру через формализованный процесс
-постановки задач с ИИ-агентом.
+Мультиплеерная 2D-ферма на Windows: выращиваешь культуры, кормишь животных, печёшь на заводах и опережаешь соперников. Сервер — единственный источник правды; клиент только показывает картину и отправляет действия.
+
+Если нужна «карта местности» по коду — ты в правильном файле: ниже и игра, и архитектура, и как всё запустить за пять минут.
 
 ---
 
-## Что это за проект
+## Содержание
 
-`Farm Wars` — соревновательная ферма, где игроки:
-
-- выращивают растения и животных,
-- перерабатывают ресурсы через заводы,
-- реагируют на случайные катастрофы,
-- мешают соперникам через скрытые саботажи,
-- защищаются контрмерами,
-- соревнуются за выполнение цели матча.
-
-Ключевой критерий MVP: можно доиграть хотя бы одну полноценную партию (singleplayer и multiplayer).
-
----
-
-## Техническое направление
-
-- Платформа: Windows desktop.
-- Клиент/UI: Python + `pygame`.
-- Сервер и мультиплеерная логика: Python.
-- Игровая симуляция: C++ модуль через `pybind11`.
-- База данных: SQLite (нормализованная схема + FK).
-- Мультиплеер: псевдо-реалтайм, server-authoritative, вход в матч по `join code`.
+1. [Суть игры](#суть-игры)
+2. [Как устроен матч](#как-устроен-матч)
+3. [Семена и урожай](#семена-и-урожай)
+4. [Архитектура](#архитектура)
+5. [Структура репозитория](#структура-репозитория)
+6. [Быстрый старт](#быстрый-старт)
+7. [Играть: управление и LAN](#играть-управление-и-lan)
+8. [HTTP API](#http-api)
+9. [Тесты](#тесты)
+10. [Документация и процесс команды](#документация-и-процесс-команды)
+11. [Что дальше](#что-дальше)
 
 ---
 
-## Команда и зоны ответственности
+## Суть игры
 
-- `NIKITA_LEAD` — архитектура, контракты, интеграция, приемка.
-- `NIKITA` — Python client/server/network/db.
-- `SANYA` — C++ simulation core + Python bindings.
+Ты ведёшь ферму на сетке **6 грядок + 2 загона**. Соперники (до трёх человек) делают то же на своих участках карты.
 
----
+**Цель матча** — первым получить в инвентарь заданный продукт (по умолчанию **хлеб**). Его готовят на пекарне из муки и пшеницы.
 
-## Основные документы проекта
+Параллельно можно:
 
-- `GAME.md`  
-  Концепция и идея игры, core gameplay, режимы, ценность проекта.
+- покупать семена и корм в магазине;
+- продавать собранный урожай за **бестики** (внутриигровая валюта);
+- применять **саботаж** по клеткам соперника (если игроков больше одного);
+- переживать **случайные события** (засуха, дождь и т.д.).
 
-- `GAME_TECH_REQUIREMENTS.md`  
-  Полные технические требования: архитектура, БД, сетевая модель, roadmap, DoD, изолированная разработка.
-
-- `GUIDE_FOR_AI.md`  
-  Регламент работы ИИ-агента: цикл вопросов, генерация ТЗ, checkpoint-приемка, архитектурные ограничения.
-
-- `TZ_REQUIREMENTS.md`  
-  Стандарт подготовки ТЗ: формат имени, обязательные разделы, quality-критерии, правила командных checkpoints.
-
-- `DECISIONS.md`  
-  Журнал архитектурных и процессных решений с причинами выбора и последствиями.
-
-- `TASK_STATUS.md`  
-  Единая доска статусов ТЗ и checkpoint-ов + журнал общекомандных синхронизаций.
+Полная продуктовая задумка — в [`GAME.md`](GAME.md). Технический scope MVP — в [`GAME_TECH_REQUIREMENTS.md`](GAME_TECH_REQUIREMENTS.md).
 
 ---
 
-## Как работает процесс с ИИ-агентом
+## Как устроен матч
 
-1. Разработчик формулирует идею задачи.
-2. ИИ изучает репозиторий и задает все нужные вопросы.
-3. Разработчик отвечает на вопросы.
-4. ИИ создает ТЗ по стандарту.
-5. Работа идет по checkpoints.
-6. После каждого checkpoint ИИ показывает результат и запрашивает приемку.
-7. Регулярно выполняется общий командный checkpoint:
-    - краткий отчет каждого в общую группу (`сделано / в работе / блокеры`),
-    - взаимная проверка кода друг друга.
-8. Ключевые архитектурные/процессные выборы фиксируются в `DECISIONS.md`.
-9. Текущий прогресс и блокеры по ТЗ обновляются в `TASK_STATUS.md`.
+Время в игре идёт **тиками**. Сервер раз в ~0,25 с (4 тика/сек) собирает очередь действий игроков, обогащает их данными из SQLite и один раз вызывает движок `simulate_tick`. Результат — новое состояние мира и список событий; клиенты подтягивают его через HTTP.
 
----
+```mermaid
+flowchart LR
+  subgraph clients [Клиенты pygame]
+    C1[Игрок 1]
+    C2[Игрок 2]
+  end
+  subgraph server [Сервер Python]
+    API[HTTP API]
+    M[Match + tick loop]
+    E[action_enricher]
+    Shop[shop / sell / animals / sabotage]
+  end
+  DB[(SQLite)]
+  ENG[engine_core C++ или stub]
 
-## Стандарт именования ТЗ
+  C1 -->|действия| API
+  C2 -->|действия| API
+  API --> M
+  M --> Shop
+  M --> E
+  E --> ENG
+  DB --> M
+  DB --> E
+  ENG --> M
+  M -->|sync| C1
+  M -->|sync| C2
+```
 
-Формат файла:
+**Два типа действий:**
 
-`NNN.DEVELOPER.TITLE.md`
+| Тип | Примеры | Где обрабатывается |
+|-----|---------|-------------------|
+| Немедленные | покупка, продажа, животное, саботаж | только сервер, без тика движка |
+| На тик | полив, посадка, сбор, рецепт, корм | сервер обогащает → движок |
 
-Где:
-
-- `NNN` — трехзначный индекс,
-- `DEVELOPER` — `NIKITA` | `SANYA` | `NIKITA_LEAD`,
-- `TITLE` — краткое имя задачи в `UPPER_SNAKE_CASE`.
-
-Пример:
-
-- `001.SANYA.CPP_ENGINE_CORE_PYBIND_BASE.md`
-
----
-
-## Обязательные разделы любого ТЗ
-
-1. `Context`
-2. `Goal`
-3. `Scope`
-4. `Functional Requirements`
-5. `Non-Functional Requirements`
-6. `Data Contracts / API Contracts`
-7. `Implementation Plan`
-8. `Checkpoints`
-9. `Acceptance Criteria`
-10. `Test Plan`
+Победа проверяется после тика: есть ли у игрока целевой продукт в инвентаре → событие `MATCH_FINISHED`.
 
 ---
 
-## Изолированная параллельная разработка (обязательно)
+## Семена и урожай
 
-Чтобы разработчики не блокировали друг друга при отсутствии "боевых" данных:
+В инвентаре два разных слоя предметов — это важно не путать.
 
-- Используется `contract-first` подход.
-- Для межмодульных задач обязательны:
-    - контракты,
-    - fixtures,
-    - stubs,
-    - отдельный checkpoint интеграции с реальным модулем.
-- Любая задача должна быть выполнима локально независимо от готовности соседнего компонента.
+| В инвентаре | Пример | Зачем |
+|-------------|--------|--------|
+| **Семена** (`SEED`) | `wheat_seed` | посадка на грядку; покупка в магазине |
+| **Урожай и товары** (`RAW` / `PROCESSED`) | `wheat`, `milk`, `bread` | сбор с грядки, рецепты, **продажа** |
+
+При посадке клиент шлёт `plant_id: "wheat"`. Сервер добавляет `seed_product_id` и `crop_product_id`; движок **списывает один пакет семян** и ставит на клетку культуру `wheat`. При сборе в инвентарь попадает уже **пшеница**, не семена.
+
+Стартовый набор (на игрока): семена нескольких культур, немного муки и корма, **120 бестиков** — см. `server/world_factory.py`.
 
 ---
 
-## Структура репозитория (реализовано)
+## Архитектура
 
-| Путь                | Зона                 | Содержимое                                                  |
-|---------------------|----------------------|-------------------------------------------------------------|
-| `client/`           | `NIKITA`             | pygame lobby/match, HTTP-клиент, poll `StateSync`           |
-| `server/`           | `NIKITA`             | HTTP API, матчи, tick loop, победа                          |
-| `db/`               | `NIKITA`             | `schema.sql`, `seed_minimal.sql`, `loader.py`, `pricing.py` |
-| `shared/`           | `NIKITA_LEAD`        | Python DTO контрактов v1                                    |
-| `engine_cpp/`       | `SANYA`              | C++ `simulate_tick` + pybind11                              |
-| `engine_core_stub/` | `SANYA` / интеграция | Python-заглушка движка                                      |
-| `fixtures/`         | общая                | `world_state/`, `actions/`                                  |
-| `tools/`            | общая                | `init_db.py`, smoke/integration-тесты                       |
+| Слой | Технология | Кто ведёт |
+|------|------------|-----------|
+| Клиент, UI | Python + pygame | NIKITA |
+| Сервер, API, матч, БД | Python + SQLite | NIKITA |
+| Симуляция тика | C++ (`pybind11`) + зеркальный stub | SANYA |
+| Контракты v1 | `docs/contracts/GAME_CONTRACTS_V1.md` | NIKITA_LEAD + команда |
+
+**Принципы:**
+
+- **Contract-first** — форматы `TickInput`, действий и событий зафиксированы до кода соседнего модуля.
+- **Server-authoritative** — клиент не считает игру сам, только отображает `world_state` с сервера.
+- **Stub ≡ C++** — без собранного модуля работает `engine_core_stub`; поведение должно совпадать (`tools/smoke_test.py`).
+
+Границы модулей подробно: [`docs/contracts/ARCHITECTURE_V1.md`](docs/contracts/ARCHITECTURE_V1.md).
+
+---
+
+## Структура репозитория
+
+```
+farm-wars/
+├── client/              # pygame: лобби, матч, UI, опрос sync
+├── server/              # HTTP API, матчи, enricher, магазин, события
+├── db/                  # schema.sql, seed_minimal.sql, загрузчик каталога
+├── engine_cpp/          # C++ simulate_tick + сборка .pyd
+├── engine_core_stub/    # Python-заглушка движка (dev / CI без C++)
+├── shared/              # pacing, пути к движку, зеркало контрактов
+├── fixtures/            # эталонные world_state и actions для тестов
+├── tools/               # init_db, build_engine, автотесты
+└── docs/
+    ├── contracts/       # GAME_CONTRACTS_V1, ARCHITECTURE_V1
+    └── specs/           # ТЗ по задачам (NIKITA / SANYA / gameplay)
+```
+
+**Полезные точки входа в код:**
+
+| Задача | Файл |
+|--------|------|
+| Запуск сервера | `server/__main__.py` |
+| Тик матча | `server/match.py` |
+| Обогащение посадки/рецепта | `server/action_enricher.py` |
+| Магазин / продажа | `server/shop.py`, `server/sell.py` |
+| Создание мира | `server/world_factory.py` |
+| Клиент | `client/main.py`, `client/ui.py` |
+| Движок | `engine_cpp/src/simulate_tick.cpp`, `engine_core_stub/stub.py` |
+| Контент | `db/seed_minimal.sql` |
 
 ---
 
 ## Быстрый старт
 
-### 1. Один раз: БД и зависимости
+### Требования
+
+- Windows 10+
+- Python 3.11+
+- Для C++-движка: CMake + MSVC **или** MinGW (см. ниже)
+
+### 1. Зависимости и база
 
 ```bash
 pip install -r client/requirements.txt
@@ -149,187 +164,197 @@ pip install pybind11
 py tools/init_db.py --seed
 ```
 
-### C++ движок (опционально)
+Команда создаёт `db/farm_wars.db` из схемы и сида. **После `git pull`**, если менялись `schema.sql` или `seed_minimal.sql`, пересоздайте БД той же командой.
 
-Без сборки сервер использует Python-заглушку `engine_core_stub`. Для нативного модуля:
+### 2. Движок (рекомендуется)
+
+Без сборки сервер использует **stub** — для разработки UI/сервера этого достаточно. Для полного совпадения с продакшен-логикой:
 
 ```bash
 py tools/build_engine.py
 ```
 
-| Платформа | Рекомендуемый toolchain | Требования |
-|-----------|------------------------|------------|
-| Windows + python.org | MSVC (по умолчанию) | [VS 2022 Build Tools](https://visualstudio.microsoft.com/downloads/) — «Desktop development with C++»; CMake из PATH или из VS |
-| Windows + MinGW | GCC | [MSYS2](https://www.msys2.org/): `pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake` и **Python из MSYS2** (тот же ABI, что у g++) |
-| Linux | GCC (auto) | `build-essential`, `cmake`, `pybind11` |
+| Ситуация | Команда |
+|----------|---------|
+| Visual Studio (python.org) | `py tools/build_engine.py --toolchain msvc` |
+| MinGW / MSYS2 | `py tools/build_engine.py --toolchain gcc` |
+| Чистая пересборка | `py tools/build_engine.py --clean` |
 
-```bash
-py tools/build_engine.py --toolchain msvc   # Visual Studio
-py tools/build_engine.py --toolchain gcc    # g++ / MinGW
-py tools/build_engine.py --clean            # пересобрать с нуля
-```
+> На Windows перед сборкой **закройте** `py -m server` и все клиенты — иначе файл `engine_core*.pyd` может быть заблокирован.
 
-PowerShell: `powershell -ExecutionPolicy Bypass -File tools/build_engine.ps1 -Toolchain gcc`
+Артефакт: `engine_cpp/build/engine_core.cp311-win_amd64.pyd` (имя может отличаться по версии Python).
 
-Артефакт ищется в `engine_cpp/build/Release/` (MSVC) или `engine_cpp/build/` (GCC).
-
-### 2. Сервер
+### 3. Сервер
 
 ```bash
 py -m server
 ```
 
-По умолчанию: `http://0.0.0.0:8765` (localhost + LAN). В логе — IP для гостей в сети.
+По умолчанию: `http://0.0.0.0:8765`. В логе будет LAN-IP для гостей.
 
-### 3. Клиент
+### 4. Клиент
 
 ```bash
 py -m client
 ```
 
-В lobby: **Server IP**, **Port**, **Connect**, затем Create/Join и (хост) Start.
+В лобби: **Server IP** → **Connect** → создать матч или войти по коду → хост нажимает **Start**.
 
-CLI для гостя в LAN: `py -m client --host 192.168.x.x --port 8765`
-
-### Автотесты (без pygame-окна)
+Гость в LAN:
 
 ```bash
-py tools/verify_seed.py
-py tools/test_db_pricing.py
-py tools/test_server_flow.py
-py tools/test_multiplayer.py   # 2–4 игрока, sync, саботаж, owner-check
-py tools/test_vertical_slice.py
-py tools/test_client_net.py    # нужен запущенный сервер
+py -m client --host 192.168.x.x --port 8765
 ```
-
-Перед сборкой C++ остановите `py -m server` и клиенты — иначе Windows не перезапишет `engine_core*.pyd` (`Permission denied`).
 
 ---
 
-## HTTP API (контракт v1)
+## Играть: управление и LAN
+
+### Экран матча
+
+- **Слева** — твоя ферма (6 грядок, 2 загона), подсказка по выбранной клетке.
+- **Справа** — панель «Ферма и склад»: цель, действия, урожай, семена, магазин, рецепты, животные, заводы.
+- **Снизу** (если есть соперники) — ферма выбранного противника и саботаж.
+
+### Клавиши
+
+| Клавиша | Действие |
+|---------|----------|
+| **W** | полить выбранную грядку |
+| **T** | посадить выбранные семена |
+| **H** | собрать урожай |
+| **B** | запустить выбранный рецепт на заводе |
+| **C** | купить выбранное животное в загон |
+| **F** | покормить животное в загоне |
+| **V** | продать товар (лучше сначала кликнуть чип урожая справа) |
+| **1–6** | выбор культуры для посадки |
+| **X** | саботаж по **чужой** клетке |
+| **Esc** | выход в лобби |
+
+### Мультиплеер 2–4 игрока
+
+| Роль | Шаги |
+|------|------|
+| **Хост** | `py -m server` → Create → дождаться гостей → Start → передать **код комнаты** и **IP из лога** |
+| **Гость** | Server IP = IP хоста → Connect → Join → ждать старт (клиент сам войдёт в матч) |
+
+На хосте откройте порт **8765** в брандмауэре Windows для Python.
+
+Сценарий приёмки: [`docs/specs/gameplay/001.SIGNOFF_DEMO_SCRIPT.md`](docs/specs/gameplay/001.SIGNOFF_DEMO_SCRIPT.md).
+
+### Темп и баланс
+
+- **4 тика в секунду** (`FARM_WARS_TICK_SEC=0.25`).
+- Поля `growth_time_sec`, `production_time_sec` в БД — это **тики**, не секунды стенного времени. Перевод: тики ÷ 4 ≈ секунды.
+- Случайные события: по умолчанию проверка каждые **120** тиков (~30 с), шанс **20%**.
+
+### Переменные окружения
+
+| Переменная | Сторона | По умолчанию | Назначение |
+|------------|---------|--------------|------------|
+| `FARM_WARS_HOST` | сервер | `0.0.0.0` | bind |
+| `FARM_WARS_PORT` | оба | `8765` | порт |
+| `FARM_WARS_TICK_SEC` | сервер | `0.25` | интервал тика |
+| `FARM_WARS_SERVER_HOST` | клиент | `127.0.0.1` | IP сервера |
+| `FARM_WARS_WIN_PRODUCT` | сервер | `bread` | цель победы |
+| `FARM_WARS_DEV` | сервер | — | `1` → цель `cake` (длинный тест) |
+| `FARM_WARS_EVENT_INTERVAL` | сервер | `120` | период проверки событий |
+| `FARM_WARS_EVENT_PROB` | сервер | `0.2` | вероятность события |
+| `FARM_WARS_DB_PATH` | сервер | `db/farm_wars.db` | путь к БД |
+
+---
+
+## HTTP API
 
 Базовый URL: `http://<host>:8765`
 
-| Метод | Путь                                        | Назначение                               |
-|-------|---------------------------------------------|------------------------------------------|
-| GET   | `/api/health`                               | проверка сервера                         |
-| POST  | `/api/matches/create`                       | создать матч (`player_name` опционально) |
-| POST  | `/api/matches/join`                         | `{join_code, player_name}`               |
-| POST  | `/api/matches/start`                        | `{match_id}`                             |
-| POST  | `/api/matches/action`                       | `ClientActionEnvelope`                   |
-| GET   | `/api/matches/{match_id}/sync?since_tick=0` | `StateSyncEvent`                         |
-| GET   | `/api/matches/{match_id}/roster`            | игроки в комнате (лобби)                |
+| Метод | Путь | Назначение |
+|-------|------|------------|
+| GET | `/api/health` | статус, версия shop handler, каталог для UI |
+| POST | `/api/matches/create` | создать матч |
+| POST | `/api/matches/join` | `{ "join_code", "player_name" }` |
+| POST | `/api/matches/start` | `{ "match_id" }` |
+| POST | `/api/matches/action` | конверт `ClientActionEnvelope` |
+| GET | `/api/matches/{id}/sync?since_tick=N` | состояние + события |
+| GET | `/api/matches/{id}/roster` | список игроков в лобби |
+
+Форматы полей — [`docs/contracts/GAME_CONTRACTS_V1.md`](docs/contracts/GAME_CONTRACTS_V1.md).
 
 ---
 
-## Управление в матче (клиент)
+## Тесты
 
-- клик — выбор своей клетки
-- **W** — полив (`WATER_PLANT`)
-- **A** / **T** — посадка (`PLACE_ON_TILE`; сервер подставляет параметры из БД)
-- **H** — сбор (`HARVEST_PLANT`)
-- **B** — печь хлеб (`START_RECIPE`)
-- кнопки в UI — магазин, полив, посадка, сбор, печь
-- **Esc** — выход в lobby (сброс sync, без возврата в старый матч)
-- **X** — саботаж по выбранной **чужой** клетке (низ экрана — ферма соперника)
-
-Победа: первый игрок с целевым продуктом в инвентаре (по умолчанию **`bread`**).  
-Темп: **4 тика/сек** (`FARM_WARS_TICK_SEC=0.25`); длительности в БД/мире — в **тиках** (~90 с реального времени на рост пшеницы при seed 2026-05-28).  
-Случайные события: по умолчанию каждые **120** тиков (~30 с), вероятность **20%** (`FARM_WARS_EVENT_INTERVAL`, `FARM_WARS_EVENT_PROB`).
-
-Стартовый инвентарь: **120** бестиков, пшеница, мука, корм (см. `server/world_factory.py`).  
-Продажа из инвентаря: server-only `SELL_PRODUCT` (`shop_handler` **`immediate_v7`**).
-
-После `git pull` пересоздайте БД: `py tools/init_db.py --seed`.
-
-Полный сценарий демо (2 игрока, победа, саботаж): [docs/specs/gameplay/001.SIGNOFF_DEMO_SCRIPT.md](docs/specs/gameplay/001.SIGNOFF_DEMO_SCRIPT.md)
+Запускайте из корня репозитория:
 
 ```bash
-py tools/test_vertical_slice.py
+py tools/verify_seed.py          # минимумы контента в БД
+py tools/test_db_pricing.py      # формулы цен рецептов
+py tools/smoke_test.py           # движок: контракт, stub vs C++
+py tools/test_server_flow.py     # сервер: магазин, посадка, победа
+py tools/test_multiplayer.py     # 2–4 игрока, sync, саботаж, owner
+py tools/test_vertical_slice.py  # 2 игрока, bread, poison_water
+```
+
+`tools/test_client_net.py` — нужен **запущенный** сервер.
+
+Удобная проверка перед коммитом, затрагивающим движок или БД:
+
+```bash
+py tools/init_db.py --seed
+py tools/build_engine.py
+py tools/smoke_test.py
+py tools/test_server_flow.py
+py tools/test_multiplayer.py
 ```
 
 ---
 
-## Мультиплеер по сети (LAN, 2–4 игрока)
+## Документация и процесс команды
 
-| Роль  | Действие                                                                    |
-|-------|-----------------------------------------------------------------------------|
-| Хост  | `py -m server`, Create → **дождаться гостей** → Start; передать **join code** и **LAN IP** из лога |
-| Гость | Server IP = IP хоста, Connect → Join → **ждать старт** (клиент сам войдёт в матч) |
+| Документ | Зачем читать |
+|----------|----------------|
+| [`GAME.md`](GAME.md) | идея игры, фантазия продукта |
+| [`GAME_TECH_REQUIREMENTS.md`](GAME_TECH_REQUIREMENTS.md) | полный тех scope, DoD, roadmap |
+| [`docs/contracts/GAME_CONTRACTS_V1.md`](docs/contracts/GAME_CONTRACTS_V1.md) | протокол действий и событий |
+| [`TASK_STATUS.md`](TASK_STATUS.md) | статусы ТЗ и team checkpoints |
+| [`DECISIONS.md`](DECISIONS.md) | почему приняли те или иные решения |
+| [`GUIDE_FOR_AI.md`](GUIDE_FOR_AI.md) | как ставить задачи через ИИ-агента |
+| [`docs/specs/gameplay/010.TEAM.WORK_SUMMARY_AND_HANDOFF.md`](docs/specs/gameplay/010.TEAM.WORK_SUMMARY_AND_HANDOFF.md) | что уже сделано и handoff |
 
-Проверено: `py tools/test_multiplayer.py`. Спека: [docs/specs/gameplay/009.NIKITA.MULTIPLAYER_2PLUS_VERIFICATION.md](docs/specs/gameplay/009.NIKITA.MULTIPLAYER_2PLUS_VERIFICATION.md).
+**ТЗ по ролям (актуальный backlog):**
 
-Переменные окружения:
+- SANYA — [`docs/specs/engine_cpp/006.SANYA.NEXT_ENGINE_ROADMAP.md`](docs/specs/engine_cpp/006.SANYA.NEXT_ENGINE_ROADMAP.md)
+- NIKITA — [`docs/specs/server/010.NIKITA.NEXT_SERVER_CLIENT_ROADMAP.md`](docs/specs/server/010.NIKITA.NEXT_SERVER_CLIENT_ROADMAP.md)
 
-| Переменная              | Сторона         | По умолчанию                    |
-|-------------------------|-----------------|---------------------------------|
-| `FARM_WARS_HOST`        | сервер          | `0.0.0.0`                       |
-| `FARM_WARS_PORT`        | сервер / клиент | `8765`                          |
-| `FARM_WARS_TICK_SEC`    | сервер          | `0.25` (4 тика/сек)             |
-| `FARM_WARS_TICKS_PER_SEC` | сервер        | `4` (если не задан `TICK_SEC`)  |
-| `FARM_WARS_SERVER_HOST` | клиент          | `127.0.0.1`                     |
-| `FARM_WARS_SERVER_PORT` | клиент          | `8765`                          |
-| `FARM_WARS_SERVER`      | клиент          | полный URL (`http://host:port`) |
-| `FARM_WARS_DB_PATH`     | сервер          | `db/farm_wars.db`               |
-| `FARM_WARS_WIN_PRODUCT` | сервер          | `bread` (цель победы)           |
-| `FARM_WARS_DEV`         | сервер          | `1` → цель `cake` (длинный тест) |
-| `FARM_WARS_EVENT_INTERVAL` | сервер       | `120` (~30 с при 4 тик/с)       |
-| `FARM_WARS_EVENT_PROB`  | сервер          | `0.2` (вероятность события)     |
-
-На хосте: разрешить входящие подключения в брандмауэре Windows для Python на порту `8765`.
+Именование файлов ТЗ: `NNN.DEVELOPER.TITLE.md` в `docs/specs/...` (см. [`TZ_REQUIREMENTS.md`](TZ_REQUIREMENTS.md)).
 
 ---
 
-## Стартовый набор критичных ТЗ уже создан
+## Что дальше
 
-Расположение: `docs/specs/`
+| Статус | Тема |
+|--------|------|
+| Готово | MVP-цикл фермы, MP 2–4, семена/урожай, магазин, продажа, животные, события, саботаж |
+| Готово (движок) | `player_id` в ошибках, `START_RECIPE` только на свой завод (`engine_cpp/006` P0) |
+| В работе | Ручной LAN sign-off 3–4 клиента (`gameplay/009`) |
+| План | Контрмеры, одиночный режим, UI polish (`server/010`) |
+| План | Больше контента (~10 растений по `GAME_TECH_REQUIREMENTS.md`) |
 
-- `architecture/001.NIKITA_LEAD.ARCHITECTURE_CONTRACTS_V1.md`
-- `architecture/002.NIKITA_LEAD.CONTRACT_FIXTURE_STUB_WORKFLOW.md`
-- `db/001.NIKITA.SQLITE_SCHEMA_AND_SEED_MINIMAL.md`
-- `engine_cpp/001.SANYA.CPP_ENGINE_CORE_PYBIND_BASE.md`
-- `server/001.NIKITA.SERVER_MATCH_JOIN_AND_TICK_LOOP.md`
-- `server/002.NIKITA.SERVER_ENRICH_PLACE_ON_TILE.md`
-- `client/001.NIKITA.CLIENT_PYGAME_CORE_AND_MATCH_UI.md`
-- `engine_cpp/002.SANYA.PLACE_ON_TILE.md`
-- `gameplay/001.NIKITA_LEAD.VERTICAL_SLICE_PLAYABLE_MATCH_V1.md`
-- `gameplay/003.NIKITA.PLAYABLE_FARM_LOOP_V2.md` — магазин, рецепты из БД, HUD
-- `gameplay/009.NIKITA.MULTIPLAYER_2PLUS_VERIFICATION.md` — MP 2–4, автотесты, LAN sign-off
-- `server/009.NIKITA.TILE_OWNER_VALIDATION.md` — owner-check `WATER_PLANT`
-- **Handoff и roadmap:** [`docs/specs/gameplay/010.TEAM.WORK_SUMMARY_AND_HANDOFF.md`](docs/specs/gameplay/010.TEAM.WORK_SUMMARY_AND_HANDOFF.md)
-- **SANYA дальше:** [`docs/specs/engine_cpp/006.SANYA.NEXT_ENGINE_ROADMAP.md`](docs/specs/engine_cpp/006.SANYA.NEXT_ENGINE_ROADMAP.md)
-- **NIKITA дальше:** [`docs/specs/server/010.NIKITA.NEXT_SERVER_CLIENT_ROADMAP.md`](docs/specs/server/010.NIKITA.NEXT_SERVER_CLIENT_ROADMAP.md)
-
----
-
-## Текущий приоритет команды
-
-**Сделано (`NIKITA` / `SANYA`):**
-
-- SQLite schema + seed + загрузчик (`db/001`)
-- Server join/tick/win + HTTP API + LAN (`server/001`)
-- Client pygame lobby/match + MP UX + панель урожай/семена (`client/001`)
-- C++ engine + stub; owner validation на клетках (`server/009`)
-- Семена vs урожай (`*_seed` / RAW), shop/sell, enricher (`server/002`, shop, sell)
-- Магазин, животные, события, PvP-саботаж, vertical slice (`gameplay/003`, `server/006`–`008`, `007`)
-- MP 2–4 автотесты (`gameplay/009`)
-
-**Дальше (см. ТЗ 006 / 010):**
-
-1. Ручной LAN sign-off 3–4 клиента (`gameplay/009` → `server/010.1`)
-2. SANYA: `player_id` в `CONTRACT_ERROR`, owner на `START_RECIPE` (`engine_cpp/006` P0)
-3. NIKITA: контрмеры, solo mode, UI polish (`server/010` P1)
-4. Расширение контента к ~10 растениям (`GAME_TECH_REQUIREMENTS.md`)
+| Критерий MVP | Сейчас |
+|--------------|--------|
+| Клиент + сервер на Windows | да |
+| Матч 2–4 по коду (LAN) | да |
+| Победа по целевому продукту | да |
+| Контент из SQLite | да (6 культур, 4 животных, 8 рецептов) |
+| Контрмеры в игре | в планах |
+| Одиночный режим | в планах |
 
 ---
 
-## Критерий готовности MVP
+## Команда
 
-| Критерий                                      | Статус                                       |
-|-----------------------------------------------|----------------------------------------------|
-| Клиент и сервер на Windows                    | есть                                         |
-| Multiplayer 2–4 по join code (localhost + LAN) | есть (`gameplay/009`, `test_multiplayer.py`) |
-| Матч до победы по целевому продукту           | есть (рецепт → инвентарь → `MATCH_FINISHED`) |
-| Контент из SQLite                             | есть (базовый seed)                          |
-| Полный контент (10 растений, PvP в матче)     | впереди                                      |
-| `PLACE_ON_TILE` (движок + server enrich)      | есть (`002.SANYA` + `server/002`)            |
+- **NIKITA_LEAD** — архитектура, контракты, приёмка
+- **NIKITA** — client, server, db, интеграция
+- **SANYA** — C++ `engine_core`, stub, smoke-тесты движка
+
+Лицензия — см. [`LICENSE`](LICENSE).
