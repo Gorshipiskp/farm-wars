@@ -50,6 +50,9 @@
 | `docs/specs/server/007.NIKITA.ANIMALS_BUY_AND_FEED.md`                        | `NIKITA`      | `Animals E2E Approved`          | `DONE`      | Нет                                   | 2026-05-28           |
 | `docs/specs/engine_cpp/005.SANYA.ANIMAL_FEED_AND_MILK.md`                    | `SANYA`       | `Milk Passive Approved`         | `DONE`      | Нет                                   | 2026-05-28           |
 | `docs/specs/gameplay/009.NIKITA.MULTIPLAYER_2PLUS_VERIFICATION.md`           | `NIKITA`      | `Manual LAN Approved`           | `ON_REVIEW` | Нужен ручной 3-клиентский LAN         | 2026-05-29           |
+| `docs/specs/engine_cpp/006.SANYA.NEXT_ENGINE_ROADMAP.md`                     | `SANYA`       | `P0+P1 Done`                    | `IN_PROGRESS` | P2 ждёт NIKITA (саботаж, контрмеры)  | 2026-05-29           |
+| `docs/specs/client/002.NIKITA.MINESWEEPER_UI.md`                             | `NIKITA`      | `—`                             | `PLANNED`   | Логика готова (`minesweeper/`)         | 2026-05-29           |
+| `docs/specs/client/003.NIKITA.WATERFLOW_UI.md`                               | `NIKITA`      | `—`                             | `PLANNED`   | Логика готова (`waterflow/`)           | 2026-05-29           |
 | `docs/specs/server/009.NIKITA.TILE_OWNER_VALIDATION.md`                      | `NIKITA`      | `Water Owner Check Approved`    | `DONE`      | `START_RECIPE` owner → `server/010`   | 2026-05-28           |
 | `docs/specs/gameplay/010.TEAM.WORK_SUMMARY_AND_HANDOFF.md`                   | `NIKITA_LEAD` | `Handoff Published`             | `DONE`      | Нет                                   | 2026-05-29           |
 | `docs/specs/engine_cpp/006.SANYA.NEXT_ENGINE_ROADMAP.md`                     | `SANYA`       | `P0 Contract Errors`            | `PLANNED`   | Ждёт PR SANYA                         | 2026-05-29           |
@@ -210,3 +213,20 @@
     - `gameplay/009` — ручной LAN 3–4 клиента.
     - `engine_cpp/006` P0, `server/010` P0–P1.
 - **Следующее**: контрмеры, solo mode, `player_id` в `CONTRACT_ERROR` (SANYA).
+
+### TEAM-CP-010 (2026-05-29) — мини-игры для саботажа (SANYA → NIKITA)
+
+- **Сделано (SANYA)**:
+    - `minesweeper/` — логика сапера: 12 тестов PASS, пресеты сложности (easy/medium/hard).
+    - `waterflow/` — логика «три в ряд с вёдрами»: 10 тестов PASS.
+    - Обе игры — чистые Python-классы без UI, готовы к интеграции.
+    - ТЗ для NIKITA: `client/002` (сапер UI), `client/003` (waterflow UI).
+    - `engine_cpp/006` P0+P1 DONE: `player_id` в ошибках, проверка владельца завода, рефакторинг find_tile.
+- **Нужно NIKITA**:
+    - Прикрутить pygame-окошки к `minesweeper/` и `waterflow/`.
+    - Сапер: срабатывает при клике на заминированную клетку.
+    - Waterflow: срабатывает при саботаже воды.
+    - Анимации свайпов/падений/исчезновений для waterflow.
+    - При победе — снимать эффект саботажа.
+- **Блокеры**: нет (со стороны SANYA всё готово).
+
