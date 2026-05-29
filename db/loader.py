@@ -24,6 +24,7 @@ class Product:
 class Plant:
     plant_id: str
     product_id: str
+    seed_product_id: str
     display_name: str
     growth_time_sec: int
     water_decay_per_tick: int
@@ -109,8 +110,19 @@ class GameContentCatalog:
         return self.buildings.get(building_type)
 
     def default_win_product_id(self) -> str:
-        """Win target intentionally impossible for dev testing (cake needs milk → cows)."""
-        return "cake"
+        """
+        Match win target from env.
+
+        FARM_WARS_WIN_PRODUCT — override (e.g. bread, cake).
+        FARM_WARS_DEV=1 — default cake (harder to finish while testing animals).
+        """
+        override = os.environ.get("FARM_WARS_WIN_PRODUCT", "").strip()
+        if override:
+            return override
+        dev = os.environ.get("FARM_WARS_DEV", "").lower() in ("1", "true", "yes")
+        if dev:
+            return "cake"
+        return "bread"
 
 
 def _row_product(row) -> Product:
@@ -142,6 +154,7 @@ def load_catalog(db_path: str | None = None) -> GameContentCatalog:
             r["plant_id"]: Plant(
                 plant_id=r["plant_id"],
                 product_id=r["product_id"],
+                seed_product_id=r["seed_product_id"],
                 display_name=r["display_name"],
                 growth_time_sec=r["growth_time_sec"],
                 water_decay_per_tick=r["water_decay_per_tick"],

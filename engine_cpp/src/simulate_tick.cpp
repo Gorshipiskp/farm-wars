@@ -287,12 +287,19 @@ py::dict simulate_tick(py::dict input) {
             std::string tile_id = payload["tile_id"].cast<std::string>();
             try {
                 py::dict tile = find_tile(tiles, tile_id);
-                tile["water_level"] = 100;
+                std::string owner = tile["owner_player_id"].cast<std::string>();
+                if (owner != player_id) {
+                    events.append(make_error_event(
+                        tick_id, "INVALID_TYPE",
+                        "Tile not owned by " + player_id));
+                } else {
+                    tile["water_level"] = 100;
 
-                py::dict ev_payload;
-                ev_payload["tile_id"] = tile_id;
-                ev_payload["player_id"] = player_id;
-                events.append(make_game_event("PLANT_WATERED", tick_id, ev_payload));
+                    py::dict ev_payload;
+                    ev_payload["tile_id"] = tile_id;
+                    ev_payload["player_id"] = player_id;
+                    events.append(make_game_event("PLANT_WATERED", tick_id, ev_payload));
+                }
 
             } catch (const std::runtime_error& e) {
                 events.append(make_error_event(tick_id, "MISSING_FIELD", e.what()));
@@ -323,6 +330,10 @@ py::dict simulate_tick(py::dict input) {
         } else if (action_type == "PLACE_ON_TILE") {
             std::string tile_id = payload["tile_id"].cast<std::string>();
             std::string plant_id = payload["plant_id"].cast<std::string>();
+            std::string seed_product_id = plant_id;
+            if (payload.contains("seed_product_id") && !payload["seed_product_id"].is_none()) {
+                seed_product_id = payload["seed_product_id"].cast<std::string>();
+            }
             int initial_health = payload["initial_health"].cast<int>();
             int initial_water = payload["initial_water_level"].cast<int>();
 
@@ -364,12 +375,12 @@ py::dict simulate_tick(py::dict input) {
                         py::list inventory = p["inventory"].cast<py::list>();
                         for (size_t inv_idx = 0; inv_idx < inventory.size(); inv_idx++) {
                             auto inv_item = inventory[inv_idx].cast<py::dict>();
-                            if (inv_item["product_id"].cast<std::string>() != plant_id) continue;
+                            if (inv_item["product_id"].cast<std::string>() != seed_product_id) continue;
 
                             int amount = inv_item["amount"].cast<int>();
                             if (amount < 1) {
                                 events.append(make_error_event(tick_id, "MISSING_FIELD",
-                                    "No " + plant_id + " in inventory for player " + player_id));
+                                    "No " + seed_product_id + " in inventory for player " + player_id));
                                 inv_found = true;
                                 break;
                             }
@@ -386,11 +397,18 @@ py::dict simulate_tick(py::dict input) {
                                 inv_item["amount"] = amount - 1;
                             }
 
-                            // Посадить растение на клетку
+                            // Посадить растение на клетку (урожай — crop id)
                             tile["occupant_type"] = "PLANT";
-                            tile["occupant_id"] = plant_id;
+                            std::string crop_id = plant_id;
+                            if (payload.contains("crop_product_id") && !payload["crop_product_id"].is_none()) {
+                                crop_id = payload["crop_product_id"].cast<std::string>();
+                            }
+                            tile["occupant_id"] = crop_id;
                             tile["health"] = initial_health;
-                            // water_level не трогаем — влажность принадлежит грядке, не растению
+                            if (payload.contains("initial_water_level")) {
+                                int w = payload["initial_water_level"].cast<int>();
+                                tile["water_level"] = std::max(0, std::min(100, w));
+                            }
 
                             // Поля роста (опциональные — придут от сервера когда server/003 готов)
                             tile["growth_elapsed_sec"] = 0;
@@ -418,7 +436,7 @@ py::dict simulate_tick(py::dict input) {
                             "Player not found: " + player_id));
                     } else if (!inv_found) {
                         events.append(make_error_event(tick_id, "MISSING_FIELD",
-                            "No " + plant_id + " in inventory for player " + player_id));
+                            "No " + seed_product_id + " in inventory for player " + player_id));
                     }
                 }
             } catch (const std::runtime_error& e) {
@@ -428,9 +446,53 @@ py::dict simulate_tick(py::dict input) {
         } else if (action_type == "BUY_PRODUCT") {
             // Server-only — ignore if leaked into engine.
 
-        } else if (action_type == "FEED_ANIMAL" || action_type == "APPLY_SABOTAGE" ||
-                   action_type == "USE_COUNTERMEASURE") {
-            // Заглушка: не реализовано, но не ломает игру
+        } else if (action_type == "BUY_ANIMAL" || action_type == "APPLY_SABOTAGE") {
+            // Server-only — ignore if leaked into engine.
+
+        } else if (action_type == "FEED_ANIMAL") {
+            std::string tile_id = payload["tile_id"].cast<std::string>();
+            try {
+                py::dict tile = find_tile(tiles, tile_id);
+                std::string owner = tile["owner_player_id"].cast<std::string>();
+                if (owner != player_id) {
+                    py::dict p;
+                    p["player_id"] = player_id;
+                    p["tile_id"] = tile_id;
+                    p["reason"] = "NOT_OWNER";
+                    events.append(make_game_event("FEED_FAILED", tick_id, p));
+                } else if (tile["occupant_type"].is_none() ||
+                           tile["occupant_type"].cast<std::string>() != "ANIMAL") {
+                    py::dict p;
+                    p["player_id"] = player_id;
+                    p["tile_id"] = tile_id;
+                    p["reason"] = "NO_ANIMAL";
+                    events.append(make_game_event("FEED_FAILED", tick_id, p));
+                } else {
+                    if (payload.contains("production_interval_sec")) {
+                        tile["production_interval_sec"] = payload["production_interval_sec"];
+                    }
+                    if (payload.contains("product_id")) {
+                        tile["product_id"] = payload["product_id"];
+                    }
+                    tile["hunger_ticks"] = 0;
+                    py::dict ev_payload;
+                    ev_payload["player_id"] = player_id;
+                    ev_payload["tile_id"] = tile_id;
+                    if (tile.contains("occupant_id") && !tile["occupant_id"].is_none()) {
+                        ev_payload["animal_id"] = tile["occupant_id"];
+                    }
+                    events.append(make_game_event("ANIMAL_FED", tick_id, ev_payload));
+                }
+            } catch (const std::runtime_error& e) {
+                py::dict p;
+                p["player_id"] = player_id;
+                p["tile_id"] = tile_id;
+                p["reason"] = "UNKNOWN_TILE";
+                events.append(make_game_event("FEED_FAILED", tick_id, p));
+            }
+
+        } else if (action_type == "APPLY_SABOTAGE" || action_type == "USE_COUNTERMEASURE") {
+            // Not implemented yet
 
         } else if (action_type == "APPLY_EVENT") {
             std::string event_type = payload["event_type"].cast<std::string>();
@@ -478,13 +540,17 @@ py::dict simulate_tick(py::dict input) {
                     affected++;
                 }
             } else if (event_type == "EPIDEMIC") {
-                // Эпидемия: скорость роста животных -50% (заглушка — животные не реализованы)
-                // Пока просто считаем affected по ANIMAL-клеткам
                 for (auto& t_item : tiles) {
                     auto t = t_item.cast<py::dict>();
                     auto occ = t["occupant_type"];
                     if (occ.is_none()) continue;
                     if (occ.cast<std::string>() != "ANIMAL") continue;
+                    int interval = 12;
+                    if (t.contains("production_interval_sec") &&
+                        !t["production_interval_sec"].is_none()) {
+                        interval = t["production_interval_sec"].cast<int>();
+                    }
+                    t["production_interval_sec"] = static_cast<int>(interval * 1.5);
                     affected++;
                 }
             } else {
@@ -492,7 +558,8 @@ py::dict simulate_tick(py::dict input) {
                     "Unknown event_type: " + event_type));
             }
 
-            if (affected > 0 || event_type == "DROUGHT" || event_type == "RAIN" || event_type == "FLOOD") {
+            if (affected > 0 || event_type == "DROUGHT" || event_type == "RAIN" ||
+                event_type == "FLOOD" || event_type == "EARTHQUAKE" || event_type == "EPIDEMIC") {
                 py::dict ev_payload;
                 ev_payload["event_type"] = event_type;
                 ev_payload["severity"] = 1.0;
@@ -531,6 +598,15 @@ py::dict simulate_tick(py::dict input) {
                     if (elapsed < needed) {
                         py::dict p;
                         p["player_id"] = player_id; p["tile_id"] = tile_id; p["reason"] = "NOT_RIPE";
+                        events.append(make_game_event("HARVEST_FAILED", tick_id, p));
+                        harvest_handled = true;
+                    }
+                }
+                if (!harvest_handled && tile.contains("water_level") && !tile["water_level"].is_none()) {
+                    int water = tile["water_level"].cast<int>();
+                    if (water < 50) {
+                        py::dict p;
+                        p["player_id"] = player_id; p["tile_id"] = tile_id; p["reason"] = "NOT_READY";
                         events.append(make_game_event("HARVEST_FAILED", tick_id, p));
                         harvest_handled = true;
                     }
@@ -599,7 +675,7 @@ py::dict simulate_tick(py::dict input) {
     // Шаг 5.5: пассивная фаза — испарение воды со всех грядок, рост/смерть растений
     {
         const int HEALTH_DECAY_PER_TICK = 10;
-        const int DEFAULT_EVAPORATION = 1;  // испарение с пустой грядки
+        const int DEFAULT_EVAPORATION = 0;  // пустые грядки без испарения (урожай — water_decay из БД)
 
         py::dict map = next_world_state["map"].cast<py::dict>();
         py::list all_tiles = map["tiles"].cast<py::list>();
@@ -678,6 +754,84 @@ py::dict simulate_tick(py::dict input) {
             } else {
                 tile["health"] = health;
             }
+        }
+    }
+
+    // Шаг 5.55: пассивная фаза животных
+    {
+        const int ANIMAL_HUNGER_LIMIT = 400;
+        py::list all_players = next_world_state["players"].cast<py::list>();
+        py::dict map = next_world_state["map"].cast<py::dict>();
+        py::list all_tiles = map["tiles"].cast<py::list>();
+
+        for (auto& t_item : all_tiles) {
+            auto tile = t_item.cast<py::dict>();
+            auto occ = tile["occupant_type"];
+            if (occ.is_none()) continue;
+            if (occ.cast<std::string>() != "ANIMAL") continue;
+            if (tile["occupant_id"].is_none()) continue;
+
+            int hunger = 0;
+            if (tile.contains("hunger_ticks") && !tile["hunger_ticks"].is_none()) {
+                hunger = tile["hunger_ticks"].cast<int>();
+            }
+            hunger += 1;
+            tile["hunger_ticks"] = hunger;
+            if (hunger > ANIMAL_HUNGER_LIMIT) continue;
+
+            int interval = 12;
+            if (tile.contains("production_interval_sec") &&
+                !tile["production_interval_sec"].is_none()) {
+                interval = tile["production_interval_sec"].cast<int>();
+            }
+            int elapsed = 0;
+            if (tile.contains("production_elapsed_sec") &&
+                !tile["production_elapsed_sec"].is_none()) {
+                elapsed = tile["production_elapsed_sec"].cast<int>();
+            }
+            elapsed += 1;
+            tile["production_elapsed_sec"] = elapsed;
+            if (elapsed < interval) continue;
+
+            tile["production_elapsed_sec"] = 0;
+            std::string product_id = "milk";
+            if (tile.contains("product_id") && !tile["product_id"].is_none()) {
+                product_id = tile["product_id"].cast<std::string>();
+            }
+            std::string owner_id = tile["owner_player_id"].cast<std::string>();
+
+            for (auto& p_item : all_players) {
+                auto p = p_item.cast<py::dict>();
+                if (p["player_id"].cast<std::string>() != owner_id) continue;
+
+                py::list inv = p["inventory"].cast<py::list>();
+                bool found = false;
+                for (auto& inv_item : inv) {
+                    auto item = inv_item.cast<py::dict>();
+                    if (item["product_id"].cast<std::string>() == product_id) {
+                        int amt = item["amount"].cast<int>();
+                        item["amount"] = amt + 1;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    py::dict new_item;
+                    new_item["product_id"] = product_id;
+                    new_item["amount"] = 1;
+                    inv.append(new_item);
+                }
+                break;
+            }
+
+            py::dict ev_payload;
+            ev_payload["player_id"] = owner_id;
+            if (tile.contains("tile_id")) {
+                ev_payload["tile_id"] = tile["tile_id"];
+            }
+            ev_payload["product_id"] = product_id;
+            ev_payload["amount"] = 1;
+            events.append(make_game_event("ANIMAL_PRODUCED", tick_id, ev_payload));
         }
     }
 

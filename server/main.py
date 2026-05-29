@@ -8,8 +8,11 @@ Run from repo root:
 Environment:
     FARM_WARS_HOST      — bind address (default 0.0.0.0 = LAN + localhost)
     FARM_WARS_PORT      — HTTP port (default 8765)
-    FARM_WARS_TICK_SEC  — tick interval seconds (default 1.0)
+    FARM_WARS_TICK_SEC  — tick interval seconds (default 0.25 = 4 ticks/sec)
     FARM_WARS_DB_PATH   — SQLite path
+    FARM_WARS_WIN_PRODUCT — win target (default bread)
+    FARM_WARS_DEV       — if 1, win target cake
+    FARM_WARS_EVENT_INTERVAL / FARM_WARS_EVENT_PROB — random events
 """
 
 import logging
@@ -38,11 +41,15 @@ def run() -> int:
         log.error("%s", exc)
         return 1
 
+    from server.random_events import EVENT_TICK_INTERVAL, EVENT_TRIGGER_PROBABILITY
+
     log.info(
-        "Content loaded: %d products, %d recipes, win=%s",
+        "Content loaded: %d products, %d recipes, win=%s, events every %s ticks p=%s",
         len(game.catalog.products),
         len(game.catalog.recipes),
         game.catalog.default_win_product_id(),
+        EVENT_TICK_INTERVAL,
+        EVENT_TRIGGER_PROBABILITY,
     )
 
     game.start_ticks()

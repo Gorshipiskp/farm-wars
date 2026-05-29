@@ -37,14 +37,23 @@
 | `docs/specs/server/001.NIKITA.SERVER_MATCH_JOIN_AND_TICK_LOOP.md`           | `NIKITA`      | `Win Condition Approved`        | `DONE`      | Нет                                  | 2026-05-28           |
 | `docs/specs/server/002.NIKITA.SERVER_ENRICH_PLACE_ON_TILE.md`               | `NIKITA`      | `Contracts Updated`             | `DONE`      | Нет                                  | 2026-05-28           |
 | `docs/specs/client/001.NIKITA.CLIENT_PYGAME_CORE_AND_MATCH_UI.md`           | `NIKITA`      | `UX Stability Approved`         | `DONE`      | Нет                                  | 2026-05-28           |
-| `docs/specs/gameplay/001.NIKITA_LEAD.VERTICAL_SLICE_PLAYABLE_MATCH_V1.md`   | `NIKITA_LEAD` | `Integration Baseline Approved` | `PLANNED`   | Baseline client/server/db готов; ждёт интеграционный sign-off | 2026-05-28           |
+| `docs/specs/gameplay/001.NIKITA_LEAD.VERTICAL_SLICE_PLAYABLE_MATCH_V1.md`   | `NIKITA_LEAD` | `Demo Ready Approved`           | `DONE`      | Автотесты + `001.SIGNOFF_DEMO_SCRIPT.md` | 2026-05-28           |
+| `docs/specs/server/008.NIKITA.PVP_SABOTAGE_MVP.md`                          | `NIKITA`      | `Sabotage MVP Approved`         | `DONE`      | Нет                                   | 2026-05-28           |
 | `docs/specs/gameplay/003.NIKITA.PLAYABLE_FARM_LOOP_V2.md`                   | `NIKITA`      | `Mini Loop Approved`            | `DONE`      | Нет                                  | 2026-05-28           |
 | `docs/specs/gameplay/004.NIKITA.HARVEST_AND_RECIPE_INGREDIENTS.md`          | `NIKITA`      | `Harvest + Ingredients Approved` | `DONE`      | Нет                                  | 2026-05-28           |
 | `docs/specs/engine_cpp/003.SANYA.PLANT_TICK_GROWTH_AND_ENGINE_MECHANICS.md` | `SANYA`       | `Factory Tick Approved`         | `DONE`      | Нет                                  | 2026-05-28 |
 | `docs/specs/server/003.NIKITA.SERVER_ENRICH_PLANT_GROWTH.md`                | `NIKITA`      | `Enrich Growth Fields`          | `DONE`      | Нет                                  | 2026-05-28           |
 | `docs/specs/server/004.NIKITA.FIX_HARVEST_WATER_LEVEL.md`                    | `NIKITA`      | `Fix Applied`                   | `DONE`      | Нет                                  | 2026-05-28           |
-| `docs/specs/server/005.NIKITA.NEXT_FEATURES_ROADMAP.md`                      | `NIKITA`      | `—`                             | `PLANNED`   | Ждёт NIKITA                           | 2026-05-28           |
-| `docs/specs/engine_cpp/004.SANYA.RANDOM_EVENTS.md`                           | `SANYA`       | `—`                             | `PLANNED`   | Ждёт SANYA                            | 2026-05-28           |
+| `docs/specs/server/005.NIKITA.NEXT_FEATURES_ROADMAP.md`                      | `NIKITA`      | `—`                             | `PLANNED`   | Очередь/животные/PvP                  | 2026-05-28           |
+| `docs/specs/server/006.NIKITA.RANDOM_EVENTS_AND_RAIN_RENAME.md`              | `NIKITA`      | `Server Trigger Approved`       | `DONE`      | Нет                                   | 2026-05-28           |
+| `docs/specs/engine_cpp/004.SANYA.RANDOM_EVENTS.md`                           | `SANYA`       | `APPLY_EVENT Approved`          | `DONE`      | Нет                                   | 2026-05-28           |
+| `docs/specs/server/007.NIKITA.ANIMALS_BUY_AND_FEED.md`                        | `NIKITA`      | `Animals E2E Approved`          | `DONE`      | Нет                                   | 2026-05-28           |
+| `docs/specs/engine_cpp/005.SANYA.ANIMAL_FEED_AND_MILK.md`                    | `SANYA`       | `Milk Passive Approved`         | `DONE`      | Нет                                   | 2026-05-28           |
+| `docs/specs/gameplay/009.NIKITA.MULTIPLAYER_2PLUS_VERIFICATION.md`           | `NIKITA`      | `Manual LAN Approved`           | `ON_REVIEW` | Нужен ручной 3-клиентский LAN         | 2026-05-29           |
+| `docs/specs/server/009.NIKITA.TILE_OWNER_VALIDATION.md`                      | `NIKITA`      | `Water Owner Check Approved`    | `DONE`      | `START_RECIPE` owner → `server/010`   | 2026-05-28           |
+| `docs/specs/gameplay/010.TEAM.WORK_SUMMARY_AND_HANDOFF.md`                   | `NIKITA_LEAD` | `Handoff Published`             | `DONE`      | Нет                                   | 2026-05-29           |
+| `docs/specs/engine_cpp/006.SANYA.NEXT_ENGINE_ROADMAP.md`                     | `SANYA`       | `P0 Contract Errors`            | `PLANNED`   | Ждёт PR SANYA                         | 2026-05-29           |
+| `docs/specs/server/010.NIKITA.NEXT_SERVER_CLIENT_ROADMAP.md`               | `NIKITA`      | `P0 LAN Sign-off`               | `PLANNED`   | См. `gameplay/009`, `010.1`           | 2026-05-29           |
 
 ---
 
@@ -144,3 +153,60 @@
 
 Серверная часть (случайный выбор события раз в N тиков) — сделает `NIKITA` после приёмки.
     - Пора провести ручной LAN-тест (host + guest, матч до `bread`).
+
+### TEAM-CP-005 (2026-05-28)
+
+- **Сделано**:
+    - `server/006` DONE: `server/random_events.py`, FLOOD→RAIN в seed/schema, триггер каждые 30 тиков (20%).
+    - `engine_cpp/004` формализован, статус DONE.
+    - Победа по умолчанию `bread`; `FARM_WARS_DEV=1` → `cake`.
+    - Рост культур в seed: 25–35 сек (не 5 сек debug).
+    - Клиент: тосты `EVENT_TRIGGERED`.
+    - Контракты: `APPLY_EVENT`, `EVENT_TRIGGERED`.
+    - Удалён мёртвый `server/harvest.py`.
+- **В работе**: `gameplay/001` LAN sign-off, `architecture/001` team sign-off.
+- **Следующее**: countermeasures, engine formalization.
+
+### TEAM-CP-007 (2026-05-28)
+
+- **Сделано**:
+    - `gameplay/001` DONE: `tools/test_vertical_slice.py`, demo script.
+    - `server/008` PvP: `APPLY_SABOTAGE`, 3 типа из БД, скрытые тосты.
+    - Клиент: ферма соперника, саботаж в сайдбаре, клавиша X.
+    - `SHOP_HANDLER_VERSION` → `immediate_v6`.
+
+### TEAM-CP-006 (2026-05-28)
+
+- **Сделано**:
+    - Животные E2E: `BUY_ANIMAL`, `FEED_ANIMAL`, пассивное молоко (stub + C++).
+    - `server/007`, `engine_cpp/005` DONE; `SHOP_HANDLER_VERSION` → `immediate_v5`.
+    - Клиент: загон, кнопки корова/корм, корм в магазине, тосты.
+    - `cow.production_interval_sec` = 12 в seed.
+
+### TEAM-CP-008 (2026-05-28) — мультиплеер 2–4, pacing, MP UX
+
+- **Сделано**:
+    - `gameplay/009`: автотест `tools/test_multiplayer.py` (join 3–4, sync, саботаж, win, owner water).
+    - `server/009` DONE: `WATER_PLANT` проверяет `owner_player_id` (C++ + stub).
+    - Клиент: гостевой `_poll_match_started()`, Esc → lobby без возврата в матч, `is_left_click`, вёрстка HUD.
+    - Pacing: `FARM_WARS_TICK_SEC=0.25` (4 т/с), `shared/game_pacing.py`, seed длительнее (рост/хлеб/корова).
+    - Геймплей: стартовый инвентарь, `SELL_PRODUCT`, `SHOP_HANDLER_VERSION` → `immediate_v7`.
+    - Контракты: секция `WATER_PLANT` в `GAME_CONTRACTS_V1.md`.
+    - README, SIGNOFF, DECISIONS обновлены.
+- **В работе**: ручной LAN 3 окна (`gameplay/009` Manual LAN).
+- **Операционно**: пересборка `.pyd` только при остановленных server/client (Windows lock).
+
+### TEAM-CP-009 (2026-05-29) — семена/урожай, UI, стабилизация
+
+- **Сделано**:
+    - Разделение продуктов: `SEED` (`*_seed`) vs `RAW` (урожай); `plants.seed_product_id` в schema/seed.
+    - Server: enricher, shop whitelist, sell RAW/PROCESSED; стартовый инвентарь — семена.
+    - Engine stub + C++: списание `seed_product_id`; пересборка `engine_core`.
+    - Client: панель «Ферма и склад», `ProductPicker` / `SeedPicker`, фиксы `_send_buy_animal`, MP tabs.
+    - Тесты обновлены; `smoke_test`, `test_server_flow`, `test_multiplayer` — зелёные.
+    - Handoff: `docs/specs/gameplay/010.TEAM.WORK_SUMMARY_AND_HANDOFF.md`.
+    - Roadmap: `engine_cpp/006` (SANYA), `server/010` (NIKITA).
+- **В работе**:
+    - `gameplay/009` — ручной LAN 3–4 клиента.
+    - `engine_cpp/006` P0, `server/010` P0–P1.
+- **Следующее**: контрмеры, solo mode, `player_id` в `CONTRACT_ERROR` (SANYA).

@@ -9,6 +9,13 @@ import copy
 import logging
 
 from db.loader import GameContentCatalog
+from server.world_util import (
+    consume_product,
+    contract_error,
+    find_player,
+    find_tile,
+    make_event,
+)
 
 log = logging.getLogger("farm_wars.server.enricher")
 
@@ -46,22 +53,25 @@ def enrich_actions_for_tick(
                 continue
             enriched.append(action_copy)
 
-        elif action_type == "BUY_PRODUCT":
+        elif action_type == "FEED_ANIMAL":
+            event = _enrich_feed_animal(action_copy, world_state, catalog, tick_id)
+            if event is not None:
+                pre_events.append(event)
+                continue
+            enriched.append(action_copy)
+
+        elif action_type in ("BUY_PRODUCT", "BUY_ANIMAL", "APPLY_SABOTAGE"):
             log.error(
                 "%s reached enricher (should be server-only): %s",
                 action_type,
                 action_copy.get("payload"),
             )
-            pre_events.append({
-                "contract_version": "v1",
-                "event_type": "CONTRACT_ERROR",
-                "server_tick": tick_id,
-                "payload": {
-                    "error_code": "INVALID_TYPE",
-                    "message": f"{action_type} is server-only, not an engine action",
-                    "field_path": "action_type",
-                },
-            })
+            pre_events.append(contract_error(
+                tick_id,
+                "INVALID_TYPE",
+                f"{action_type} is server-only, not an engine action",
+                "action_type",
+            ))
         else:
             enriched.append(action_copy)
 
@@ -74,7 +84,7 @@ def _enrich_place_on_tile(action: dict, catalog: GameContentCatalog, tick_id: in
     plant = catalog.plants.get(plant_id) if plant_id else None
 
     if plant is None:
-        return _contract_error(
+        return contract_error(
             tick_id, "MISSING_FIELD", f"Unknown plant_id: {plant_id}", "payload.plant_id"
         )
 
@@ -82,6 +92,8 @@ def _enrich_place_on_tile(action: dict, catalog: GameContentCatalog, tick_id: in
     payload["initial_water_level"] = plant.initial_water_level
     payload["growth_time_sec"] = plant.growth_time_sec
     payload["water_decay_per_tick"] = plant.water_decay_per_tick
+    payload["seed_product_id"] = plant.seed_product_id
+    payload["crop_product_id"] = plant.product_id
     return None
 
 
@@ -96,7 +108,7 @@ def _enrich_start_recipe(
     recipe_id = payload.get("recipe_id")
 
     if not factory_id or not recipe_id:
-        return _contract_error(
+        return contract_error(
             tick_id, "MISSING_FIELD", "factory_id and recipe_id required", "payload"
         )
 
@@ -108,7 +120,7 @@ def _enrich_start_recipe(
 
     factory = _find_factory(world_state, factory_id)
     if factory is None:
-        return _contract_error(tick_id, "MISSING_FIELD", f"Factory not found: {factory_id}", "payload.factory_id")
+        return contract_error(tick_id, "MISSING_FIELD", f"Factory not found: {factory_id}", "payload.factory_id")
 
     if factory.get("factory_type") != recipe.building_type:
         return _recipe_rejected(
@@ -119,9 +131,9 @@ def _enrich_start_recipe(
             "WRONG_BUILDING_TYPE",
         )
 
-    player = _find_player(world_state, action["player_id"])
+    player = find_player(world_state, action["player_id"])
     if player is None:
-        return _contract_error(
+        return contract_error(
             tick_id, "MISSING_FIELD", f"Player not found: {action['player_id']}", "player_id"
         )
 
@@ -140,27 +152,70 @@ def _enrich_start_recipe(
             "recipe_id": recipe_id,
             "duration_sec": recipe.production_time_sec,
         })
-        return {
-            "contract_version": "v1",
-            "event_type": "RECIPE_QUEUED",
-            "server_tick": tick_id,
-            "payload": {
-                "player_id": action["player_id"],
-                "factory_id": factory_id,
-                "recipe_id": recipe_id,
-            },
-        }
+        return make_event(tick_id, "RECIPE_QUEUED", {
+            "player_id": action["player_id"],
+            "factory_id": factory_id,
+            "recipe_id": recipe_id,
+        })
 
     payload["duration_sec"] = recipe.production_time_sec
     payload["output_product_id"] = recipe.output_product_id
     return None
 
 
-def _find_player(world_state: dict, player_id: str) -> dict | None:
-    for player in world_state.get("players", []):
-        if player.get("player_id") == player_id:
-            return player
+def _enrich_feed_animal(
+    action: dict,
+    world_state: dict,
+    catalog: GameContentCatalog,
+    tick_id: int,
+) -> dict | None:
+    payload = action.setdefault("payload", {})
+    tile_id = payload.get("tile_id")
+    player_id = action.get("player_id")
+
+    tile = find_tile(world_state, tile_id)
+    if tile is None:
+        return _feed_failed(tick_id, player_id, tile_id, "UNKNOWN_TILE")
+
+    if tile.get("owner_player_id") != player_id:
+        return _feed_failed(tick_id, player_id, tile_id, "NOT_OWNER")
+
+    if tile.get("zone_type") != "ANIMAL":
+        return _feed_failed(tick_id, player_id, tile_id, "WRONG_ZONE")
+
+    if tile.get("occupant_type") != "ANIMAL" or not tile.get("occupant_id"):
+        return _feed_failed(tick_id, player_id, tile_id, "NO_ANIMAL")
+
+    animal_id = tile.get("occupant_id")
+    animal = catalog.animals.get(animal_id)
+    if animal is None:
+        return _feed_failed(tick_id, player_id, tile_id, "UNKNOWN_ANIMAL")
+
+    feed_id = animal.feed_product_id
+    if not feed_id:
+        return _feed_failed(tick_id, player_id, tile_id, "NO_FEED_PRODUCT")
+
+    player = find_player(world_state, player_id)
+    if player is None:
+        return contract_error(
+            tick_id, "MISSING_FIELD", f"Player not found: {player_id}", "player_id"
+        )
+
+    if not consume_product(player, feed_id, 1):
+        return _feed_failed(tick_id, player_id, tile_id, "NOT_ENOUGH_FEED")
+
+    payload["animal_id"] = animal_id
+    payload["production_interval_sec"] = animal.production_interval_sec
+    payload["product_id"] = animal.product_id
     return None
+
+
+def _feed_failed(tick_id: int, player_id: str, tile_id: str | None, reason: str) -> dict:
+    return make_event(tick_id, "FEED_FAILED", {
+        "player_id": player_id,
+        "tile_id": tile_id,
+        "reason": reason,
+    })
 
 
 def _consume_ingredients(player: dict, recipe) -> bool:
@@ -188,19 +243,6 @@ def _find_factory(world_state: dict, factory_id: str) -> dict | None:
     return None
 
 
-def _contract_error(tick_id: int, code: str, message: str, field_path: str | None) -> dict:
-    return {
-        "contract_version": "v1",
-        "event_type": "CONTRACT_ERROR",
-        "server_tick": tick_id,
-        "payload": {
-            "error_code": code,
-            "message": message,
-            "field_path": field_path,
-        },
-    }
-
-
 def _recipe_rejected(
     tick_id: int,
     player_id: str,
@@ -208,14 +250,9 @@ def _recipe_rejected(
     recipe_id: str,
     reason: str,
 ) -> dict:
-    return {
-        "contract_version": "v1",
-        "event_type": "RECIPE_REJECTED",
-        "server_tick": tick_id,
-        "payload": {
-            "player_id": player_id,
-            "factory_id": factory_id,
-            "recipe_id": recipe_id,
-            "reason": reason,
-        },
-    }
+    return make_event(tick_id, "RECIPE_REJECTED", {
+        "player_id": player_id,
+        "factory_id": factory_id,
+        "recipe_id": recipe_id,
+        "reason": reason,
+    })

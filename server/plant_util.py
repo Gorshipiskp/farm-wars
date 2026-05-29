@@ -1,6 +1,9 @@
 """Resolve plant_id from tile occupant_id (fixture instances vs catalog ids)."""
 
-PLANT_IDS = ("wheat", "corn", "potato")
+PLANT_IDS = (
+    "wheat", "corn", "potato",
+    "tomato", "carrot", "sunflower",
+)
 
 
 def resolve_plant_id(occupant_id: str | None) -> str | None:

@@ -157,23 +157,28 @@ def simulate_tick(input_dict):
 
         if action_type == "WATER_PLANT":
             tile_id = payload["tile_id"]
-            found = False
-            for tile in tiles:
-                if tile["tile_id"] == tile_id:
-                    tile["water_level"] = 100
-                    found = True
+            tile = None
+            for t in tiles:
+                if t["tile_id"] == tile_id:
+                    tile = t
                     break
 
-            if found:
+            if tile is None:
+                events.append(_make_error_event(tick_id, "MISSING_FIELD",
+                                                f"Tile not found: {tile_id}"))
+            elif tile.get("owner_player_id") != player_id:
+                events.append(_make_error_event(
+                    tick_id, "INVALID_TYPE",
+                    f"Tile {tile_id} not owned by {player_id}",
+                ))
+            else:
+                tile["water_level"] = 100
                 events.append({
                     "contract_version": "v1",
                     "event_type": "PLANT_WATERED",
                     "server_tick": tick_id,
                     "payload": {"tile_id": tile_id, "player_id": player_id},
                 })
-            else:
-                events.append(_make_error_event(tick_id, "MISSING_FIELD",
-                                                f"Tile not found: {tile_id}"))
 
         elif action_type == "START_RECIPE":
             factory_id = payload["factory_id"]
@@ -207,6 +212,7 @@ def simulate_tick(input_dict):
         elif action_type == "PLACE_ON_TILE":
             tile_id = payload["tile_id"]
             plant_id = payload["plant_id"]
+            seed_product_id = payload.get("seed_product_id", plant_id)
             initial_health = payload["initial_health"]
             initial_water = payload["initial_water_level"]
 
@@ -243,52 +249,112 @@ def simulate_tick(input_dict):
                 else:
                     inv_found = False
                     for idx, item in enumerate(player["inventory"]):
-                        if item["product_id"] == plant_id:
-                            if item["amount"] < 1:
-                                events.append(_make_error_event(
-                                    tick_id, "MISSING_FIELD",
-                                    f"No {plant_id} in inventory for player {player_id}"))
-                                inv_found = True
-                                break
-
-                            # Списать 1 единицу
-                            if item["amount"] == 1:
-                                del player["inventory"][idx]
-                            else:
-                                item["amount"] -= 1
-
-                            # Посадить растение
-                            tile["occupant_type"] = "PLANT"
-                            tile["occupant_id"] = plant_id
-                            tile["health"] = initial_health
-                            # water_level не трогаем — влажность грядки
-                            tile["growth_elapsed_sec"] = 0
-                            if "growth_time_sec" in payload:
-                                tile["growth_time_sec"] = payload["growth_time_sec"]
-                            if "water_decay_per_tick" in payload:
-                                tile["water_decay_per_tick"] = payload["water_decay_per_tick"]
-
-                            events.append({
-                                "contract_version": "v1",
-                                "event_type": "PLANT_PLACED",
-                                "server_tick": tick_id,
-                                "payload": {
-                                    "tile_id": tile_id,
-                                    "plant_id": plant_id,
-                                    "player_id": player_id,
-                                },
-                            })
+                        if item["product_id"] != seed_product_id:
+                            continue
+                        if item["amount"] < 1:
+                            events.append(_make_error_event(
+                                tick_id, "MISSING_FIELD",
+                                f"No {seed_product_id} in inventory for player {player_id}"))
                             inv_found = True
                             break
+
+                        # Списать 1 пакет семян
+                        if item["amount"] == 1:
+                            del player["inventory"][idx]
+                        else:
+                            item["amount"] -= 1
+
+                        # Посадить растение (на клетке — тип культуры, не семена)
+                        tile["occupant_type"] = "PLANT"
+                        crop_id = payload.get("crop_product_id", plant_id)
+                        tile["occupant_id"] = crop_id
+                        tile["health"] = initial_health
+                        if "initial_water_level" in payload:
+                            tile["water_level"] = max(0, min(100, int(payload["initial_water_level"])))
+                        tile["growth_elapsed_sec"] = 0
+                        if "growth_time_sec" in payload:
+                            tile["growth_time_sec"] = payload["growth_time_sec"]
+                        if "water_decay_per_tick" in payload:
+                            tile["water_decay_per_tick"] = payload["water_decay_per_tick"]
+
+                        events.append({
+                            "contract_version": "v1",
+                            "event_type": "PLANT_PLACED",
+                            "server_tick": tick_id,
+                            "payload": {
+                                "tile_id": tile_id,
+                                "plant_id": plant_id,
+                                "seed_product_id": seed_product_id,
+                                "player_id": player_id,
+                            },
+                        })
+                        inv_found = True
+                        break
 
                     if not inv_found:
                         events.append(_make_error_event(
                             tick_id, "MISSING_FIELD",
-                            f"No {plant_id} in inventory for player {player_id}"))
+                            f"No {seed_product_id} in inventory for player {player_id}"))
 
-        elif action_type in ("BUY_PRODUCT", "FEED_ANIMAL", "APPLY_SABOTAGE", "USE_COUNTERMEASURE"):
-            # Заглушка: не реализовано, игнорируем без ошибки
+        elif action_type in ("BUY_PRODUCT", "BUY_ANIMAL", "APPLY_SABOTAGE", "USE_COUNTERMEASURE"):
+            # Server-only — ignore if leaked into engine queue
             pass
+
+        elif action_type == "FEED_ANIMAL":
+            tile_id = payload.get("tile_id")
+            tile = next((t for t in tiles if t.get("tile_id") == tile_id), None)
+            if tile is None:
+                events.append({
+                    "contract_version": "v1",
+                    "event_type": "FEED_FAILED",
+                    "server_tick": tick_id,
+                    "payload": {
+                        "player_id": player_id,
+                        "tile_id": tile_id,
+                        "reason": "UNKNOWN_TILE",
+                    },
+                })
+            elif tile.get("owner_player_id") != player_id:
+                events.append({
+                    "contract_version": "v1",
+                    "event_type": "FEED_FAILED",
+                    "server_tick": tick_id,
+                    "payload": {
+                        "player_id": player_id,
+                        "tile_id": tile_id,
+                        "reason": "NOT_OWNER",
+                    },
+                })
+            elif tile.get("occupant_type") != "ANIMAL":
+                events.append({
+                    "contract_version": "v1",
+                    "event_type": "FEED_FAILED",
+                    "server_tick": tick_id,
+                    "payload": {
+                        "player_id": player_id,
+                        "tile_id": tile_id,
+                        "reason": "NO_ANIMAL",
+                    },
+                })
+            else:
+                if "production_interval_sec" in payload:
+                    tile["production_interval_sec"] = payload["production_interval_sec"]
+                if "product_id" in payload:
+                    tile["product_id"] = payload["product_id"]
+                tile["hunger_ticks"] = 0
+                ev_feed = {
+                    "player_id": player_id,
+                    "tile_id": tile_id,
+                }
+                animal_id = tile.get("occupant_id")
+                if animal_id:
+                    ev_feed["animal_id"] = animal_id
+                events.append({
+                    "contract_version": "v1",
+                    "event_type": "ANIMAL_FED",
+                    "server_tick": tick_id,
+                    "payload": ev_feed,
+                })
 
         elif action_type == "APPLY_EVENT":
             event_type = payload["event_type"]
@@ -329,17 +395,21 @@ def simulate_tick(input_dict):
                     affected += 1
 
             elif event_type == "EPIDEMIC":
-                # Эпидемия: скорость роста животных -50% (заглушка)
+                # Эпидемия: замедление надоя (интервал ×1.5)
                 for t in tiles:
                     if t.get("occupant_type") != "ANIMAL":
                         continue
+                    interval = t.get("production_interval_sec") or 12
+                    t["production_interval_sec"] = int(interval * 1.5)
                     affected += 1
 
             else:
                 events.append(_make_error_event(tick_id, "INVALID_TYPE",
                                                 f"Unknown event_type: {event_type}"))
 
-            if affected > 0 or event_type in ("DROUGHT", "RAIN", "FLOOD"):
+            if affected > 0 or event_type in (
+                "DROUGHT", "RAIN", "FLOOD", "EARTHQUAKE", "EPIDEMIC",
+            ):
                 events.append({
                     "contract_version": "v1",
                     "event_type": "EVENT_TRIGGERED",
@@ -391,6 +461,13 @@ def simulate_tick(input_dict):
                     "server_tick": tick_id,
                     "payload": {"player_id": player_id, "tile_id": tile_id, "reason": "NOT_RIPE"},
                 })
+            elif tile.get("water_level") is not None and tile["water_level"] < 50:
+                events.append({
+                    "contract_version": "v1",
+                    "event_type": "HARVEST_FAILED",
+                    "server_tick": tick_id,
+                    "payload": {"player_id": player_id, "tile_id": tile_id, "reason": "NOT_READY"},
+                })
             else:
                 # Успех
                 product_id = tile.get("occupant_id", "")
@@ -438,7 +515,7 @@ def simulate_tick(input_dict):
 
     # Шаг 4.5: пассивная фаза — испарение со всех грядок, рост/смерть растений
     HEALTH_DECAY_PER_TICK = 10
-    DEFAULT_EVAPORATION = 1
+    DEFAULT_EVAPORATION = 0
 
     for tile in next_world_state["map"]["tiles"]:
         # Испарение — для всех грядок с водой
@@ -487,6 +564,55 @@ def simulate_tick(input_dict):
         else:
             tile["health"] = health
 
+    # Шаг 4.55: пассивная фаза животных — голод и надой
+    from shared.game_pacing import ANIMAL_HUNGER_LIMIT_TICKS
+
+    ANIMAL_HUNGER_LIMIT = ANIMAL_HUNGER_LIMIT_TICKS
+
+    for tile in next_world_state["map"]["tiles"]:
+        if tile.get("occupant_type") != "ANIMAL" or not tile.get("occupant_id"):
+            continue
+
+        hunger = tile.get("hunger_ticks", 0) + 1
+        tile["hunger_ticks"] = hunger
+        if hunger > ANIMAL_HUNGER_LIMIT:
+            continue
+
+        interval = tile.get("production_interval_sec") or 12
+        elapsed = tile.get("production_elapsed_sec", 0) + 1
+        tile["production_elapsed_sec"] = elapsed
+        if elapsed < interval:
+            continue
+
+        tile["production_elapsed_sec"] = 0
+        product_id = tile.get("product_id") or "milk"
+        owner_id = tile.get("owner_player_id", "")
+
+        for p in next_world_state["players"]:
+            if p["player_id"] != owner_id:
+                continue
+            found = False
+            for item in p["inventory"]:
+                if item["product_id"] == product_id:
+                    item["amount"] += 1
+                    found = True
+                    break
+            if not found:
+                p["inventory"].append({"product_id": product_id, "amount": 1})
+            break
+
+        events.append({
+            "contract_version": "v1",
+            "event_type": "ANIMAL_PRODUCED",
+            "server_tick": tick_id,
+            "payload": {
+                "player_id": owner_id,
+                "tile_id": tile.get("tile_id"),
+                "product_id": product_id,
+                "amount": 1,
+            },
+        })
+
     # Шаг 4.6: пассивная фаза заводов — таймер рецепта
     for factory in next_world_state["factories"]:
         if not factory.get("active_recipe_id"):
@@ -521,7 +647,7 @@ def simulate_tick(input_dict):
             break
 
         factory["active_recipe_id"] = None
-        factory.pop("output_product_id", None)
+        factory["output_product_id"] = None
 
         events.append({
             "contract_version": "v1",

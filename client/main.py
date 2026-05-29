@@ -10,9 +10,12 @@ Run:
 import argparse
 import logging
 import os
+import time
 
 import pygame
 
+from client.ui import HEIGHT
+from shared.game_pacing import real_seconds_for_ticks
 from shared.log_config import setup_logging
 from client.net import (
     DEFAULT_HOST,
@@ -31,13 +34,18 @@ log = logging.getLogger("farm_wars.client")
 STATE_LOBBY = "lobby"
 STATE_MATCH = "match"
 
-SHOP_ITEMS = [
+# Fallback until /api/health returns catalog (prices from SQLite).
+DEFAULT_SHOP_ITEMS = [
     ("wheat", 5),
     ("corn", 6),
     ("potato", 4),
+    ("tomato", 7),
+    ("carrot", 5),
     ("flour", 8),
+    ("feed", 3),
 ]
-SEED_IDS = ["wheat", "corn", "potato"]
+DEFAULT_COW_PRICE = 50
+FALLBACK_SEED_IDS = ["wheat", "corn", "potato", "tomato", "carrot", "sunflower"]
 
 
 class TextField:
@@ -48,7 +56,7 @@ class TextField:
         self.active = False
 
     def handle_event(self, event):
-        if event.type == pygame.MOUSEBUTTONDOWN:
+        if ui.is_left_click(event):
             self.active = self.rect.collidepoint(event.pos)
         if not self.active:
             return
@@ -78,7 +86,7 @@ class LobbyButton:
         screen.blit(surf, surf.get_rect(center=self.rect.center))
 
     def clicked(self, event):
-        return event.type == pygame.MOUSEBUTTONDOWN and self.rect.collidepoint(event.pos)
+        return ui.is_left_click(event) and self.rect.collidepoint(event.pos)
 
 
 class FarmWarsApp:
@@ -95,31 +103,87 @@ class FarmWarsApp:
         self.selected_tile_id: str | None = None
         self.selected_seed_id: str = "wheat"
         self._shop_buttons: list[ui.ShopButton] = []
+        self._sabotage_click_targets: list[tuple[str, pygame.Rect]] = []
+        self._shop_items: list[tuple[str, int]] = list(DEFAULT_SHOP_ITEMS)
+        self._animal_items: list[dict] = []
+        self._selected_animal_id: str = "cow"
+        self._sabotage_items: list[dict] = []
         self._action_buttons: list[ui.ActionButton] = []
+        self._recipes: list[dict] = []
+        self._win_product_id: str = "bread"
+        self._seed_ids: list[str] = list(FALLBACK_SEED_IDS)
+        self._plants_meta: dict[str, dict] = {}
+        self._selected_recipe_id: str = "bread"
+        self._seed_picker = ui.SeedPicker()
+        self._product_picker = ui.ProductPicker()
+        self._recipe_picker = ui.RecipePicker()
+        self._animal_picker = ui.AnimalPicker()
+        self._selected_sell_product_id: str | None = None
+        self._sidebar_rect: pygame.Rect | None = None
+        self._server_ok = False
         self.toasts = ui.ToastManager()
         self._prev_events: list = []
+        self._last_lobby_poll = 0.0
+        self._awaiting_match_start = False
+        self._lobby_players: list[dict] = []
+        self._lobby_host_id: str | None = None
+        self._view_opponent_id: str | None = None
+        self._opponent_tab_rects: list[tuple[str, pygame.Rect]] = []
 
-        self.field_server = TextField((56, 168, 200, 40), "127.0.0.1")
+        self.field_server = TextField((56, 132, 200, 40), "127.0.0.1")
         self.field_server.text = server_host
-        self.field_port = TextField((270, 168, 90, 40), "8765")
+        self.field_port = TextField((270, 132, 90, 40), "8765")
         self.field_port.text = str(server_port)
-        self.field_name = TextField((56, 248, 304, 40), "Твоё имя")
-        self.field_code = TextField((56, 328, 304, 40), "Код комнаты")
-        self.btn_connect = LobbyButton((56, 392, 150, 44), "Проверить связь")
-        self.btn_create = LobbyButton((218, 392, 150, 44), "Создать матч", primary=True)
-        self.btn_join = LobbyButton((56, 448, 150, 44), "Войти")
-        self.btn_start = LobbyButton((218, 448, 150, 44), "Начать игру", primary=True)
+        self.field_name = TextField((56, 212, 304, 40), "Твоё имя")
+        self.field_code = TextField((56, 292, 304, 40), "Код комнаты")
+        self.btn_connect = LobbyButton((56, 356, 150, 44), "Проверить связь")
+        self.btn_create = LobbyButton((218, 356, 150, 44), "Создать матч", primary=True)
+        self.btn_join = LobbyButton((56, 412, 150, 44), "Войти")
+        self.btn_start = LobbyButton((218, 412, 150, 44), "Начать игру", primary=True)
 
         self._action_buttons = [
-            ui.ActionButton((ui.FARM_X, 400, 175, 40), "Полить", "W", "water"),
-            ui.ActionButton((ui.FARM_X + 185, 400, 175, 40), "Посадить", "T", "plant"),
-            ui.ActionButton((ui.FARM_X, 448, 175, 40), "Собрать", "H", "harvest"),
-            ui.ActionButton((ui.FARM_X + 185, 448, 175, 40), "Печь хлеб", "B", "bake"),
+            ui.ActionButton(pygame.Rect(0, 0, 1, 1), "Полить", "W", "water"),
+            ui.ActionButton(pygame.Rect(0, 0, 1, 1), "Посадить", "T", "plant"),
+            ui.ActionButton(pygame.Rect(0, 0, 1, 1), "Собрать", "H", "harvest"),
+            ui.ActionButton(pygame.Rect(0, 0, 1, 1), "Печь", "B", "bake"),
+            ui.ActionButton(pygame.Rect(0, 0, 1, 1), "Животное", "C", "buy_animal"),
+            ui.ActionButton(pygame.Rect(0, 0, 1, 1), "Кормить", "F", "feed"),
+            ui.ActionButton(pygame.Rect(0, 0, 1, 1), "Продать", "V", "sell"),
         ]
 
         self.net = ServerClient()
         self.poller = SyncPoller(self.net, self.session)
         self._refresh_net_client()
+
+    def _apply_catalog_from_health(self, health: dict) -> None:
+        catalog = health.get("catalog") or {}
+        products = catalog.get("products") or []
+        if products:
+            self._shop_items = [(p["product_id"], int(p["price"])) for p in products]
+        plants = catalog.get("plants") or []
+        if plants:
+            self._plants_meta = {p["plant_id"]: p for p in plants}
+            self._seed_ids = [p["plant_id"] for p in plants]
+        elif catalog.get("products"):
+            self._seed_ids = [
+                p["product_id"]
+                for p in catalog["products"]
+                if p["product_id"] in FALLBACK_SEED_IDS
+            ]
+        self._animal_items = list(catalog.get("animals") or [])
+        if self._animal_items and self._selected_animal_id not in {
+            a["animal_id"] for a in self._animal_items
+        }:
+            self._selected_animal_id = self._animal_items[0]["animal_id"]
+        self._sabotage_items = list(catalog.get("sabotages") or [])
+        self._recipes = list(catalog.get("recipes") or [])
+        win = catalog.get("win_product_id")
+        if win:
+            self._win_product_id = win
+        if self._recipes and self._selected_recipe_id not in {
+            r["recipe_id"] for r in self._recipes
+        }:
+            self._selected_recipe_id = self._recipes[0]["recipe_id"]
 
     def _refresh_net_client(self) -> str:
         base_url = parse_server_address(self.field_server.text, self.field_port.text)
@@ -133,15 +197,25 @@ class FarmWarsApp:
             base = self._refresh_net_client()
             health = self.net.health()
             shop = health.get("shop_handler")
-            if shop not in ("immediate_v4", "immediate_v3", "immediate_v2"):
+            if shop not in (
+                "immediate_v7",
+                "immediate_v6",
+                "immediate_v5",
+                "immediate_v4",
+                "immediate_v3",
+                "immediate_v2",
+            ):
                 self.status_msg = "Сервер устарел — перезапусти: py -m server"
                 self.toasts.push(self.status_msg, "error")
                 return False
+            self._apply_catalog_from_health(health)
+            self._server_ok = True
             self.status_msg = f"Связь есть · {base}"
             self.toasts.push("Сервер отвечает — можно играть", "ok")
             self.session.clear_error()
             return True
         except ServerError as exc:
+            self._server_ok = False
             self.status_msg = f"Сервер недоступен: {exc.message}"
             self.toasts.push(self.status_msg, "error")
             return False
@@ -161,6 +235,7 @@ class FarmWarsApp:
 
             ui.draw_gradient_bg(self.screen)
             if self.state == STATE_LOBBY:
+                self._poll_lobby_updates()
                 self._draw_lobby(mouse)
             else:
                 self._draw_match(mouse)
@@ -196,7 +271,10 @@ class FarmWarsApp:
             self.session.player_id = "p1"
             self.session.join_code = res["join_code"]
             self.session.is_host = True
+            self._awaiting_match_start = True
+            self._lobby_players = [{"player_id": "p1", "display_name": name}]
             self.field_code.text = res["join_code"]
+            self._refresh_lobby_roster()
             self.status_msg = f"Матч создан! Код для друзей: {res['join_code']}"
             self.toasts.push(self.status_msg, "ok")
             self.session.clear_error()
@@ -219,12 +297,68 @@ class FarmWarsApp:
             self.session.player_id = res["player_id"]
             self.session.join_code = code
             self.session.is_host = False
+            self._awaiting_match_start = True
+            self._refresh_lobby_roster()
             self.status_msg = f"Ты в комнате как {res['player_id']}. Жди старт от хоста."
             self.toasts.push("Успешно вошёл в матч", "ok")
             self.session.clear_error()
         except ServerError as exc:
             self.status_msg = exc.message
             self.toasts.push(self.status_msg, "error")
+
+    def _enter_match(self, initial_sync: dict | None = None) -> None:
+        self._awaiting_match_start = False
+        self._lobby_players = []
+        self._view_opponent_id = None
+        self.state = STATE_MATCH
+        self.session.enable_sync()
+        if initial_sync:
+            self.session.apply_sync(initial_sync)
+        self.poller.start()
+        self._prev_events = []
+        self.status_msg = "Удачной фермы!"
+        self.toasts.push("Матч начался — удачи!", "ok")
+        self.session.clear_error()
+
+    def _leave_match_to_lobby(self) -> None:
+        self.state = STATE_LOBBY
+        self._awaiting_match_start = False
+        self._view_opponent_id = None
+        self.poller.stop()
+        self.session.discard_live_state()
+        self._prev_events = []
+        self.status_msg = "Вышел в меню"
+        self.toasts.push(self.status_msg, "info")
+
+    def _refresh_lobby_roster(self) -> None:
+        if not self.session.match_id:
+            return
+        try:
+            roster = self.net.poll_roster(self.session.match_id)
+            self._lobby_players = roster.get("players", [])
+            self._lobby_host_id = roster.get("host_player_id")
+        except ServerError:
+            pass
+
+    def _poll_lobby_updates(self) -> None:
+        """Lobby: roster for everyone; sync poll for guests waiting for start."""
+        if not self.session.match_id:
+            return
+        now = time.time()
+        if now - self._last_lobby_poll < 0.35:
+            return
+        self._last_lobby_poll = now
+        self._refresh_lobby_roster()
+        if not self._awaiting_match_start or self.session.is_host:
+            return
+        try:
+            sync = self.net.poll_sync(self.session.match_id, 0)
+        except ServerError as exc:
+            if exc.error_code == "NO_SYNC":
+                return
+            return
+        if sync.get("world_state"):
+            self._enter_match(initial_sync=sync)
 
     def _do_start(self):
         if not self.session.match_id:
@@ -234,12 +368,7 @@ class FarmWarsApp:
             return
         try:
             self.net.start_match(self.session.match_id)
-            self.state = STATE_MATCH
-            self.poller.start()
-            self._prev_events = []
-            self.status_msg = "Удачной фермы!"
-            self.toasts.push("Матч начался — удачи!", "ok")
-            self.session.clear_error()
+            self._enter_match()
         except ServerError as exc:
             self.status_msg = exc.message
             self.toasts.push(self.status_msg, "error")
@@ -247,13 +376,15 @@ class FarmWarsApp:
     def _draw_lobby(self, mouse):
         screen = self.screen
         fonts = self.fonts
-        screen.blit(fonts["title"].render("Farm Wars", True, ui.TEXT_ON_DARK), (48, 36))
-        screen.blit(
-            fonts["body"].render("Собери урожай, испеки хлеб и победи первым", True, ui.TEXT_ON_DARK),
-            (48, 72),
+        ui.draw_match_header(
+            screen,
+            fonts,
+            player_name="Лобби",
+            money=0,
+            tick=0,
         )
 
-        card = pygame.Rect(40, 108, 372, 370)
+        card = pygame.Rect(40, 72, 372, 400)
         ui.draw_panel(screen, card, "Подключение", fonts)
         ui.draw_text_field(screen, self.field_server, fonts, "Адрес сервера")
         ui.draw_text_field(screen, self.field_port, fonts, "Порт")
@@ -265,19 +396,25 @@ class FarmWarsApp:
         self.btn_join.draw(screen, fonts, mouse)
         if self.session.is_host and self.session.match_id:
             self.btn_start.draw(screen, fonts, mouse)
-            code = self.session.join_code
-            hint = fonts["small"].render(f"Передай друзьям код:  {code}", True, ui.ACCENT)
-            screen.blit(hint, (56, 502))
 
-        steps = [
-            "1. Проверить связь",
-            "2. Создать матч или войти по коду",
-            "3. Начать игру (хост)",
-        ]
-        for i, line in enumerate(steps):
-            screen.blit(fonts["small"].render(line, True, ui.TEXT_ON_DARK), (420, 120 + i * 24))
-
-        self._draw_status_bar(548, self.status_msg)
+        ui.draw_lobby_hero(screen, fonts)
+        ui.draw_lobby_status(
+            screen,
+            fonts,
+            in_room=bool(self.session.match_id),
+            is_host=self.session.is_host,
+            join_code=self.session.join_code,
+            server_ok=self._server_ok,
+        )
+        if self.session.match_id:
+            ui.draw_lobby_roster(
+                screen,
+                fonts,
+                players=self._lobby_players,
+                my_player_id=self.session.player_id,
+                host_player_id=self._lobby_host_id,
+            )
+        ui.draw_status_pill(screen, fonts, HEIGHT - 52, self.status_msg, ok=self._server_ok)
 
     def _match_event(self, event):
         if event.type == pygame.KEYDOWN:
@@ -289,15 +426,56 @@ class FarmWarsApp:
                 self._send_recipe()
             elif event.key == pygame.K_h:
                 self._send_harvest()
-            elif event.key in (pygame.K_1, pygame.K_2, pygame.K_3):
+            elif event.key == pygame.K_c:
+                self._send_buy_animal()
+            elif event.key == pygame.K_f:
+                self._send_feed()
+            elif event.key == pygame.K_x:
+                self._send_sabotage("poison_water")
+            elif event.key == pygame.K_v:
+                self._send_sell()
+            elif event.key in (
+                pygame.K_1, pygame.K_2, pygame.K_3,
+                pygame.K_4, pygame.K_5, pygame.K_6,
+            ):
                 self._select_seed(event.key - pygame.K_1)
             elif event.key == pygame.K_ESCAPE:
-                self.state = STATE_LOBBY
-                self.poller.stop()
-                self.status_msg = "Вышел в меню"
-                self.toasts.push(self.status_msg, "info")
+                self._leave_match_to_lobby()
 
-        if event.type == pygame.MOUSEBUTTONDOWN:
+        if ui.is_left_click(event):
+            for opp_id, rect in self._opponent_tab_rects:
+                if rect.collidepoint(event.pos):
+                    self._view_opponent_id = opp_id
+                    tile = self._selected_tile(self.session.world_state)
+                    if tile and tile.get("owner_player_id") != opp_id:
+                        self.selected_tile_id = None
+                    return
+            recipe_id = self._recipe_picker.hit(event.pos)
+            if recipe_id:
+                self._selected_recipe_id = recipe_id
+                self.toasts.push(f"Рецепт: {ui.product_label(self._recipe_output_id(recipe_id))}", "info")
+                return
+            animal_id = self._animal_picker.hit(event.pos)
+            if animal_id:
+                self._selected_animal_id = animal_id
+                self.toasts.push(f"Животное: {ui.animal_label(animal_id)}", "info")
+                return
+            seed = self._seed_picker.hit(event.pos)
+            if seed:
+                self._select_seed_by_id(seed)
+                return
+            product_id = self._product_picker.hit(event.pos)
+            if product_id:
+                self._selected_sell_product_id = product_id
+                self.toasts.push(
+                    f"Продажа: {ui.product_label(product_id)} (V)",
+                    "info",
+                )
+                return
+            for sab_id, rect in self._sabotage_click_targets:
+                if rect.collidepoint(event.pos):
+                    self._send_sabotage(sab_id)
+                    return
             for btn in self._shop_buttons:
                 if btn.clicked(event):
                     self._send_buy(btn.product_id)
@@ -312,6 +490,12 @@ class FarmWarsApp:
                         self._send_harvest()
                     elif btn.action_id == "bake":
                         self._send_recipe()
+                    elif btn.action_id == "buy_animal":
+                        self._send_buy_animal()
+                    elif btn.action_id == "feed":
+                        self._send_feed()
+                    elif btn.action_id == "sell":
+                        self._send_sell()
                     return
             self._pick_tile(event.pos)
 
@@ -319,47 +503,133 @@ class FarmWarsApp:
         world, *_ = self.session.snapshot()
         if not world:
             return
-        for tile in self._my_tiles(world):
-            if self._tile_rect(tile).collidepoint(pos):
+        my_tiles = self._my_tiles(world)
+        enemy_tiles = self._viewed_opponent_tiles(world)
+        for index, tile in enumerate(my_tiles):
+            if self._tile_rect_at(index, ui.FARM_Y).collidepoint(pos):
+                self.selected_tile_id = tile["tile_id"]
+                return
+        base_y = self._opponent_farm_y(world)
+        for index, tile in enumerate(enemy_tiles):
+            if self._tile_rect_at(index, base_y).collidepoint(pos):
                 self.selected_tile_id = tile["tile_id"]
                 return
 
     def _my_tiles(self, world):
+        return self._tiles_for_owner(world, self.session.player_id)
+
+    def _opponents(self, world) -> list[dict]:
         pid = self.session.player_id
-        return [t for t in world.get("map", {}).get("tiles", []) if t.get("owner_player_id") == pid]
+        return [p for p in world.get("players", []) if p.get("player_id") != pid]
+
+    def _ensure_view_opponent(self, world) -> None:
+        opps = self._opponents(world)
+        if not opps:
+            self._view_opponent_id = None
+            return
+        ids = {p["player_id"] for p in opps}
+        if self._view_opponent_id not in ids:
+            self._view_opponent_id = opps[0]["player_id"]
+
+    def _tiles_for_owner(self, world, owner_id: str) -> list[dict]:
+        tiles = [
+            t
+            for t in world.get("map", {}).get("tiles", [])
+            if t.get("owner_player_id") == owner_id
+        ]
+        tiles.sort(
+            key=lambda t: (
+                0 if t.get("zone_type") == "PLANT" else 1,
+                t["tile_id"],
+            )
+        )
+        return tiles
+
+    def _viewed_opponent_tiles(self, world) -> list[dict]:
+        self._ensure_view_opponent(world)
+        if not self._view_opponent_id:
+            return []
+        return self._tiles_for_owner(world, self._view_opponent_id)
+
+    def _viewed_opponent_name(self, world) -> str:
+        if not self._view_opponent_id:
+            return "соперника"
+        for p in self._opponents(world):
+            if p["player_id"] == self._view_opponent_id:
+                return (p.get("display_name") or p["player_id"]).strip()
+        return self._view_opponent_id
+
+    def _tile_rect_at(self, index: int, base_y: int) -> pygame.Rect:
+        col = index % ui.FARM_COLS
+        row = index // ui.FARM_COLS
+        x = ui.FARM_X + col * (ui.TILE_SIZE + ui.TILE_GAP)
+        y = base_y + row * (ui.TILE_SIZE + ui.TILE_GAP)
+        return pygame.Rect(x, y, ui.TILE_SIZE, ui.TILE_SIZE)
 
     def _tile_rect(self, tile):
-        my_tiles = self._my_tiles(self.session.world_state or {})
-        try:
-            index = next(i for i, t in enumerate(my_tiles) if t["tile_id"] == tile["tile_id"])
-        except StopIteration:
-            index = 0
-        col = index % 3
-        row = index // 3
-        x = ui.FARM_X + col * (ui.TILE_SIZE + ui.TILE_GAP)
-        y = ui.FARM_Y + row * (ui.TILE_SIZE + ui.TILE_GAP)
-        return pygame.Rect(x, y, ui.TILE_SIZE, ui.TILE_SIZE)
+        world = self.session.world_state or {}
+        my_tiles = self._my_tiles(world)
+        enemy_tiles = self._viewed_opponent_tiles(world)
+        for index, t in enumerate(my_tiles):
+            if t["tile_id"] == tile["tile_id"]:
+                return self._tile_rect_at(index, ui.FARM_Y)
+        base_y = self._opponent_farm_y(world)
+        for index, t in enumerate(enemy_tiles):
+            if t["tile_id"] == tile["tile_id"]:
+                return self._tile_rect_at(index, base_y)
+        return self._tile_rect_at(0, ui.FARM_Y)
 
     def _selected_tile(self, world) -> dict | None:
         if not world or not self.selected_tile_id:
             return None
-        for t in self._my_tiles(world):
+        for t in world.get("map", {}).get("tiles", []):
             if t["tile_id"] == self.selected_tile_id:
                 return t
         return None
+
+    def _is_enemy_tile(self, tile: dict | None) -> bool:
+        if not tile:
+            return False
+        return tile.get("owner_player_id") != self.session.player_id
 
     def _feed_toasts(self, events: list) -> None:
         if events == self._prev_events:
             return
         if len(events) > len(self._prev_events):
             for ev in events[len(self._prev_events):]:
+                pl = ev.get("payload") or {}
+                if (
+                    ev.get("event_type") == "SABOTAGE_APPLIED"
+                    and pl.get("is_hidden")
+                    and pl.get("player_id") != self.session.player_id
+                ):
+                    continue
+                ev_player = pl.get("player_id")
+                if ev_player and ev_player != self.session.player_id:
+                    if ev.get("event_type") in (
+                        "CONTRACT_ERROR",
+                        "HARVEST_FAILED",
+                        "FEED_FAILED",
+                        "RECIPE_REJECTED",
+                        "PURCHASE_FAILED",
+                        "SELL_FAILED",
+                        "ANIMAL_PURCHASE_FAILED",
+                        "SABOTAGE_FAILED",
+                    ):
+                        continue
                 msg = ui.humanize_event(ev)
                 if msg:
                     et = ev.get("event_type", "")
                     kind = "ok"
                     if et in ("CONTRACT_ERROR",):
                         kind = "error"
-                    elif et in ("RECIPE_REJECTED", "PURCHASE_FAILED", "HARVEST_FAILED"):
+                    elif et in (
+                        "RECIPE_REJECTED",
+                        "PURCHASE_FAILED",
+                        "HARVEST_FAILED",
+                        "FEED_FAILED",
+                        "ANIMAL_PURCHASE_FAILED",
+                    ):
                         kind = "warn"
                     self.toasts.push(msg, kind)
         self._prev_events = list(events)
@@ -386,9 +656,53 @@ class FarmWarsApp:
         self._send_action("WATER_PLANT", {"tile_id": self.selected_tile_id}, "Поливаем…")
 
     def _select_seed(self, index: int):
-        if 0 <= index < len(SEED_IDS):
-            self.selected_seed_id = SEED_IDS[index]
-            self.toasts.push(f"Семена: {ui.product_label(self.selected_seed_id)}", "info")
+        if 0 <= index < len(self._seed_ids):
+            self.selected_seed_id = self._seed_ids[index]
+            self.toasts.push(
+                f"Семена: {ui.seed_label_for_plant(self.selected_seed_id, self._plants_meta)}",
+                "info",
+            )
+
+    def _select_seed_by_id(self, seed_id: str) -> None:
+        if seed_id in self._seed_ids:
+            self.selected_seed_id = seed_id
+            self.toasts.push(
+                f"Семена: {ui.seed_label_for_plant(seed_id, self._plants_meta)}",
+                "info",
+            )
+
+    def _seed_product_id(self, plant_id: str) -> str:
+        meta = self._plants_meta.get(plant_id, {})
+        return meta.get("seed_product_id", f"{plant_id}_seed")
+
+    def _recipe_output_id(self, recipe_id: str) -> str:
+        for recipe in self._recipes:
+            if recipe.get("recipe_id") == recipe_id:
+                return recipe.get("output_product_id", recipe_id)
+        return recipe_id
+
+    def _factory_types(self, world: dict) -> set[str]:
+        pid = self.session.player_id
+        return {
+            f["factory_type"]
+            for f in world.get("factories", [])
+            if f.get("owner_player_id") == pid
+        }
+
+    def _factory_for_recipe(self, world: dict, recipe_id: str) -> dict | None:
+        recipe = next((r for r in self._recipes if r.get("recipe_id") == recipe_id), None)
+        if not recipe:
+            return None
+        btype = recipe.get("building_type")
+        pid = self.session.player_id
+        return next(
+            (
+                f
+                for f in world.get("factories", [])
+                if f.get("owner_player_id") == pid and f.get("factory_type") == btype
+            ),
+            None,
+        )
 
     def _send_buy(self, product_id: str | None):
         if not product_id:
@@ -405,6 +719,56 @@ class FarmWarsApp:
             return
         self._send_action("HARVEST_PLANT", {"tile_id": self.selected_tile_id}, "Собираем урожай…")
 
+    def _send_buy_animal(self):
+        world, *_ = self.session.snapshot()
+        tile = self._selected_tile(world) if world else None
+        if tile is None:
+            self.toasts.push("Выбери загон (клетку снизу)", "warn")
+            return
+        if tile.get("zone_type") != "ANIMAL":
+            self.toasts.push("Животное можно купить только в загоне", "warn")
+            return
+        if tile.get("occupant_type") not in (None, "EMPTY"):
+            self.toasts.push("Загон занят", "warn")
+            return
+        animal_id = self._selected_animal_id or "cow"
+        self._send_action(
+            "BUY_ANIMAL",
+            {"tile_id": self.selected_tile_id, "animal_id": animal_id},
+            f"Покупаем {ui.animal_label(animal_id)}…",
+        )
+
+    def _send_sabotage(self, sabotage_id: str):
+        world, *_ = self.session.snapshot()
+        tile = self._selected_tile(world) if world else None
+        if tile is None:
+            self.toasts.push("Выбери клетку соперника", "warn")
+            return
+        if not self._is_enemy_tile(tile):
+            self.toasts.push("Саботаж только по ферме соперника", "warn")
+            return
+        self._send_action(
+            "APPLY_SABOTAGE",
+            {"sabotage_id": sabotage_id, "target_tile_id": self.selected_tile_id},
+            "Саботаж…",
+        )
+
+    def _send_feed(self):
+        world, *_ = self.session.snapshot()
+        tile = self._selected_tile(world) if world else None
+        if tile is None:
+            self.toasts.push("Выбери загон с коровой", "warn")
+            return
+        if tile.get("occupant_type") != "ANIMAL":
+            self.toasts.push("Здесь нет животного", "warn")
+            return
+        animal_id = tile.get("occupant_id") or self._selected_animal_id or "cow"
+        self._send_action(
+            "FEED_ANIMAL",
+            {"tile_id": self.selected_tile_id},
+            f"Кормим {ui.animal_label(animal_id)}…",
+        )
+
     def _send_place(self):
         if not self.selected_tile_id:
             self.toasts.push("Сначала выбери грядку", "warn")
@@ -413,10 +777,12 @@ class FarmWarsApp:
         if not plant_id:
             self.toasts.push("Нет семян — загляни в магазин", "warn")
             return
+        crop = self._plants_meta.get(plant_id, {}).get("crop_display_name")
+        crop_name = crop or ui.product_label(plant_id)
         self._send_action(
             "PLACE_ON_TILE",
             {"tile_id": self.selected_tile_id, "plant_id": plant_id},
-            f"Сажаем {ui.product_label(plant_id)}…",
+            f"Сажаем {crop_name}…",
         )
 
     def _resolve_plant_for_place(self) -> str | None:
@@ -429,28 +795,60 @@ class FarmWarsApp:
         )
         if not player:
             return None
-        amounts = {i["product_id"]: i["amount"] for i in player.get("inventory", [])}
-        if amounts.get(self.selected_seed_id, 0) >= 1:
+        if ui.inventory_amount(player, self._seed_product_id(self.selected_seed_id)) >= 1:
             return self.selected_seed_id
-        for seed_id in SEED_IDS:
-            if amounts.get(seed_id, 0) >= 1:
-                return seed_id
+        for plant_id in self._seed_ids:
+            if ui.inventory_amount(player, self._seed_product_id(plant_id)) >= 1:
+                return plant_id
         return None
+
+    def _send_sell(self) -> None:
+        world, *_ = self.session.snapshot()
+        if not world:
+            return
+        player = next(
+            (p for p in world.get("players", []) if p["player_id"] == self.session.player_id),
+            None,
+        )
+        if not player:
+            return
+        product_id = self._selected_sell_product_id
+        if product_id and ui.inventory_amount(player, product_id) < 1:
+            product_id = None
+        if not product_id:
+            for item in player.get("inventory", []):
+                pid = item.get("product_id", "")
+                if not ui.is_bag_product(pid):
+                    continue
+                if int(item.get("amount", 0)) > 0:
+                    product_id = pid
+                    break
+        if not product_id:
+            self.toasts.push("Нечего продать — сначала собери урожай", "warn")
+            return
+        self._send_action(
+            "SELL_PRODUCT",
+            {"product_id": product_id, "amount": 1},
+            f"Продаём {ui.product_label(product_id)}…",
+        )
+
+    def _recipe_by_id(self, recipe_id: str) -> dict | None:
+        return next((r for r in self._recipes if r.get("recipe_id") == recipe_id), None)
 
     def _send_recipe(self):
         world, *_ = self.session.snapshot()
         if not world:
             return
-        pid = self.session.player_id
-        factory = next((f for f in world.get("factories", []) if f.get("owner_player_id") == pid), None)
+        recipe_id = self._selected_recipe_id or "bread"
+        factory = self._factory_for_recipe(world, recipe_id)
         if not factory:
-            self.toasts.push("Нет пекарни", "warn")
+            self.toasts.push("Нет завода для этого рецепта", "warn")
             return
-        recipe = "bread"
+        label = ui.product_label(self._recipe_output_id(recipe_id))
         self._send_action(
             "START_RECIPE",
-            {"factory_id": factory["factory_id"], "recipe_id": recipe},
-            "Запускаем печь…",
+            {"factory_id": factory["factory_id"], "recipe_id": recipe_id},
+            f"Готовим {label}…",
         )
 
     def _draw_match(self, mouse):
@@ -460,243 +858,339 @@ class FarmWarsApp:
         self._feed_toasts(events)
 
         name = self.session.player_name or self.session.player_id
-        screen.blit(fonts["title"].render(f"Привет, {name}!", True, ui.TEXT_ON_DARK), (ui.FARM_X, 20))
-
+        player = None
+        money = 0
         if world:
             player = next(
                 (p for p in world.get("players", []) if p["player_id"] == self.session.player_id),
                 None,
             )
             money = player["money_bestiki"] if player else 0
-            ui.draw_money_badge(screen, fonts, ui.PANEL_X - 150, 22, money)
 
-            farm_card = pygame.Rect(ui.FARM_X - 8, ui.FARM_Y - 36, 380, 510)
-            pygame.draw.rect(screen, ui.SOIL_LIGHT, farm_card, border_radius=14)
-            pygame.draw.rect(screen, ui.SOIL, farm_card, 3, border_radius=14)
-            screen.blit(fonts["body"].render("Твоя ферма", True, ui.TEXT_ON_DARK), (ui.FARM_X, ui.FARM_Y - 28))
+        ui.draw_match_header(
+            screen,
+            fonts,
+            player_name=name,
+            money=money,
+            tick=tick,
+            join_code=self.session.join_code,
+            is_host=self.session.is_host,
+        )
 
-            self._draw_tiles(world)
+        if world:
+            card_w = ui.farm_panel_inner_width() + 20
+            farm_card = pygame.Rect(ui.FARM_X - 10, ui.FARM_Y - 40, card_w, int(ui.FARM_PANEL_H))
+            ui.draw_farm_card(screen, farm_card)
+            ui.draw_zone_label(screen, fonts, ui.FARM_X, ui.FARM_Y - 32, "Твоя ферма")
+
+            self._draw_farms(world)
             tile = self._selected_tile(world)
-            hint = ui.tile_hint(tile, self.selected_seed_id)
-            hint_rect = pygame.Rect(ui.FARM_X, 368, 360, 28)
-            pygame.draw.rect(screen, (255, 255, 250), hint_rect, border_radius=8)
-            screen.blit(fonts["small"].render(hint, True, ui.TEXT), (hint_rect.x + 10, hint_rect.y + 6))
-
-            for btn in self._action_buttons:
-                btn.enabled = not finished
-                btn.draw(screen, fonts, mouse)
+            hint = ui.tile_hint(tile, self.selected_seed_id, self.session.player_id)
+            hint_rect = pygame.Rect(ui.FARM_X, ui.HINT_Y, card_w - 16, 28)
+            ui.draw_hint_bar(screen, fonts, hint_rect, hint)
 
             self._draw_bakery_status(world, fonts)
+            ui.draw_hotkey_bar(screen, fonts, ui.FARM_X, ui.HOTKEY_BAR_Y, card_w - 16)
 
             self._draw_sidebar(world, tick, events, player, mouse, finished)
         else:
             screen.blit(fonts["body"].render("Загружаем поле…", True, ui.TEXT_ON_DARK), (ui.FARM_X, ui.FARM_Y))
 
         if finished and world:
-            self._draw_win_overlay(world)
+            win = world.get("win_condition", {})
+            ui.draw_win_overlay(
+                screen,
+                fonts,
+                winner=win.get("winner_player_id", "?"),
+                you=self.session.player_id,
+                target_product=win.get("target_product_id", self._win_product_id),
+            )
         elif err:
-            self._draw_status_bar(ui.HEIGHT - 36, err, ui.ERROR)
-        else:
-            self._draw_status_bar(ui.HEIGHT - 36, self.status_msg, ui.TEXT_ON_DARK)
+            ui.draw_status_pill(screen, fonts, ui.HEIGHT - 52, err, ok=False)
+        elif self.status_msg:
+            ui.draw_status_pill(screen, fonts, ui.HEIGHT - 52, self.status_msg, ok=True)
 
-    def _draw_tiles(self, world):
-        screen = self.screen
-        fonts = self.fonts
-        for tile in self._my_tiles(world):
-            rect = self._tile_rect(tile)
-            empty = tile.get("occupant_type") == "EMPTY"
-            color = ui.TILE_EMPTY if empty else ui.TILE_PLANT
-            pygame.draw.rect(screen, color, rect, border_radius=10)
-            pygame.draw.rect(screen, ui.SOIL, rect, 2, border_radius=10)
+    def _opponent_farm_y(self, world) -> int:
+        return (
+            ui.OPPONENT_FARM_Y_MULTI
+            if len(self._opponents(world)) > 1
+            else ui.OPPONENT_FARM_Y_SINGLE
+        )
 
-            if tile["tile_id"] == self.selected_tile_id:
-                pygame.draw.rect(screen, ui.TILE_SEL, rect, 4, border_radius=10)
-                glow = rect.inflate(8, 8)
-                pygame.draw.rect(screen, ui.TILE_SEL_GLOW, glow, 2, border_radius=12)
-
-            if not empty:
-                label = ui.crop_label(tile.get("occupant_id"))
-                surf = fonts["small"].render(label, True, ui.TEXT_ON_DARK)
-                screen.blit(surf, surf.get_rect(midtop=(rect.centerx, rect.y + 10)))
-                growth_elapsed = tile.get("growth_elapsed_sec") or 0
-                growth_needed = tile.get("growth_time_sec") or 0
-                if growth_needed > 0:
-                    ratio = min(1.0, growth_elapsed / growth_needed)
-                    bar = pygame.Rect(rect.x + 8, rect.bottom - 28, rect.w - 16, 8)
-                    bar_color = ui.GROWTH_READY if ratio >= 1.0 else ui.GROWTH
-                    ui.draw_progress_bar(screen, bar, ratio, bar_color)
-                water = tile.get("water_level")
-                if water is not None:
-                    ratio = min(1.0, water / 100.0)
-                    bar = pygame.Rect(rect.x + 8, rect.bottom - 16, rect.w - 16, 8)
-                    bar_color = ui.WATER_OK if water >= 50 else ui.WATER_LOW
-                    ui.draw_progress_bar(screen, bar, ratio, bar_color)
+    def _draw_farms(self, world):
+        opponents = self._opponents(world)
+        enemy_tiles = self._viewed_opponent_tiles(world)
+        farm_y = self._opponent_farm_y(world)
+        if opponents:
+            if len(opponents) > 1:
+                self._opponent_tab_rects = ui.draw_opponent_picker(
+                    self.screen,
+                    self.fonts,
+                    ui.FARM_X,
+                    ui.OPPONENT_PICKER_Y,
+                    opponents,
+                    self._view_opponent_id,
+                )
+                label_y = ui.OPPONENT_LABEL_Y_MULTI
             else:
-                screen.blit(fonts["small"].render("пусто", True, ui.TEXT_SOFT), (rect.x + 24, rect.y + 30))
+                self._opponent_tab_rects = []
+                label_y = ui.OPPONENT_LABEL_Y_SINGLE
+            opp_name = self._viewed_opponent_name(world)
+            ui.draw_zone_label(
+                self.screen,
+                self.fonts,
+                ui.FARM_X,
+                label_y,
+                f"Ферма: {opp_name}",
+                enemy=True,
+            )
+        else:
+            self._opponent_tab_rects = []
+        self._draw_tile_group(world, self._my_tiles(world), ui.FARM_Y, own=True)
+        if enemy_tiles:
+            self._draw_tile_group(world, enemy_tiles, farm_y, own=False)
+
+    def _draw_tile_group(self, world, tiles, base_y: int, own: bool):
+        for index, tile in enumerate(tiles):
+            rect = self._tile_rect_at(index, base_y)
+            ui.draw_farm_tile(
+                self.screen,
+                self.fonts,
+                rect,
+                tile,
+                selected=tile["tile_id"] == self.selected_tile_id,
+                own=own,
+            )
 
     def _draw_bakery_status(self, world, fonts):
-        screen = self.screen
         pid = self.session.player_id
-        factory = next((f for f in world.get("factories", []) if f.get("owner_player_id") == pid), None)
-        if not factory:
-            return
-        x = ui.FARM_X
-        y = 498
-        active = factory.get("active_recipe_id")
-        rem = factory.get("remaining_time_sec", 0)
-        queue = factory.get("queue", [])
-        if active:
-            text = f"Пекарня: {ui.product_label(active)} — {rem} сек"
-            color = ui.ACCENT
-        elif queue:
-            text = f"Пекарня: очередь из {len(queue)}"
-            color = ui.WARN
+        busy = [
+            f for f in world.get("factories", [])
+            if f.get("owner_player_id") == pid and f.get("active_recipe_id")
+        ]
+        if busy:
+            f0 = busy[0]
+            active = f0.get("active_recipe_id")
+            rem = f0.get("remaining_time_sec", 0)
+            text = f"Готовим: {ui.product_label(active)} · {int(real_seconds_for_ticks(rem))} с"
+            ui.draw_bakery_chip(self.screen, fonts, ui.FARM_X, ui.BAKERY_Y, text, active=True)
         else:
-            text = "Пекарня: свободна"
-            color = ui.TEXT_SOFT
-        surf = fonts["small"].render(text, True, color)
-        screen.blit(surf, (x, y))
-        if queue and not active:
-            qnames = ", ".join(ui.product_label(q.get("recipe_id", "?")) for q in queue[:2])
-            if len(queue) > 2:
-                qnames += f" +{len(queue) - 2}"
-            screen.blit(fonts["small"].render(qnames, True, ui.TEXT_SOFT), (x, y + 18))
+            ui.draw_bakery_chip(
+                self.screen, fonts, ui.FARM_X, ui.BAKERY_Y, "Заводы свободны", active=False
+            )
+
+    def _draw_sidebar_actions(
+        self,
+        screen: pygame.Surface,
+        fonts: dict,
+        x: int,
+        y: int,
+        mouse,
+        finished: bool,
+    ) -> int:
+        bw = ui.SIDEBAR_ACTION_BTN_W
+        bh = ui.SIDEBAR_ACTION_BTN_H
+        gap = ui.SIDEBAR_ACTION_GAP
+        col2 = x + bw + gap
+        for i, btn in enumerate(self._action_buttons):
+            col = i % 2
+            row = i // 2
+            btn.rect = pygame.Rect(
+                x + col * (bw + gap),
+                y + row * (bh + gap),
+                bw,
+                bh,
+            )
+            btn.enabled = not finished
+            btn.draw(screen, fonts, mouse, compact=True)
+        rows = (len(self._action_buttons) + 1) // 2
+        return y + rows * (bh + gap)
+
+    def _sync_sell_selection(self, player: dict | None) -> None:
+        if not player:
+            self._selected_sell_product_id = None
+            return
+        if self._selected_sell_product_id:
+            if ui.inventory_amount(player, self._selected_sell_product_id) > 0:
+                return
+        for item in player.get("inventory", []):
+            pid = item.get("product_id", "")
+            if ui.is_bag_product(pid) and int(item.get("amount", 0)) > 0:
+                self._selected_sell_product_id = pid
+                return
+        self._selected_sell_product_id = None
 
     def _draw_sidebar(self, world, tick, events, player, mouse, finished):
         screen = self.screen
         fonts = self.fonts
-        rect = pygame.Rect(ui.PANEL_X, 88, ui.PANEL_W, ui.HEIGHT - 110)
-        ui.draw_panel(screen, rect, "Инвентарь и магазин", fonts)
+        rect = pygame.Rect(ui.PANEL_X, 64, ui.PANEL_W, ui.HEIGHT - 80)
+        self._sidebar_rect = rect
+        ui.draw_panel(screen, rect, "Ферма и склад", fonts)
 
         x = rect.x + 16
+        inner_w = rect.w - 32
         y = rect.y + 48
+        self._sync_sell_selection(player)
+
         win = world.get("win_condition", {})
-        goal = ui.product_label(win.get("target_product_id", "?"))
-        screen.blit(fonts["body"].render(f"Цель: {goal}", True, ui.ACCENT), (x, y))
-        y += 26
-        target = win.get("target_product_id", "")
-        if target in ui.RECIPE_RU:
-            screen.blit(fonts["small"].render(f"Нужно: {ui.RECIPE_RU[target]}", True, ui.TEXT_SOFT), (x, y))
-        y += 28
+        target = win.get("target_product_id") or self._win_product_id
+        y = ui.draw_section_header(
+            screen, fonts, x, y, f"Цель — {ui.product_label(target)}", line_w=inner_w
+        )
+        have_goal = ui.inventory_amount(player, target)
+        y = ui.draw_goal_progress(screen, fonts, rect, x, y, have_goal, 1, target)
 
-        screen.blit(fonts["small"].render("Семена (1/2/3):", True, ui.TEXT_SOFT), (x, y))
-        y += 22
-        for i, seed in enumerate(SEED_IDS):
-            sel = seed == self.selected_seed_id
-            label = f"  {'▸ ' if sel else '   '}{i + 1}. {ui.product_label(seed)}"
-            color = ui.ACCENT if sel else ui.TEXT
-            screen.blit(fonts["small"].render(label, True, color), (x, y))
-            y += 20
-        y += 8
+        y = ui.draw_section_header(
+            screen, fonts, x, y, "Действия", line_w=inner_w
+        )
+        y = self._draw_sidebar_actions(screen, fonts, x, y, mouse, finished)
+        y += 4
 
-        screen.blit(fonts["body"].render("Сумка:", True, ui.TEXT), (x, y))
-        y += 24
-        if player:
-            inv = [i for i in player.get("inventory", []) if i.get("amount", 0) > 0]
-            if inv:
-                for item in inv[:8]:
-                    line = f"  {ui.product_label(item['product_id'])}  ×{item['amount']}"
-                    screen.blit(fonts["small"].render(line, True, ui.TEXT), (x, y))
-                    y += 20
-            else:
-                screen.blit(fonts["small"].render("  пусто — сходи в магазин", True, ui.TEXT_SOFT), (x, y))
-                y += 20
-        y += 8
+        craft_recipe = self._recipe_by_id(self._selected_recipe_id)
+        if craft_recipe and player:
+            ok, missing = ui.can_craft_recipe(player, craft_recipe)
+            out = ui.product_label(craft_recipe.get("output_product_id", "bread"))
+            chip_text = f"✓ Можно: {out} (B)" if ok else f"Нужно: {', '.join(missing)}"
+            chip_color = ui.OK if ok else ui.TEXT_SOFT
+            screen.blit(fonts["tiny"].render(chip_text, True, chip_color), (x, y))
+            y += 18
 
-        pid = self.session.player_id
-        for f in world.get("factories", []):
-            if f.get("owner_player_id") != pid:
-                continue
-            screen.blit(fonts["body"].render("Пекарня:", True, ui.TEXT), (x, y))
-            y += 22
-            active = f.get("active_recipe_id")
-            rem = f.get("remaining_time_sec", 0)
-            if active:
-                label = f"  ▸ {ui.product_label(active)}"
-                screen.blit(fonts["small"].render(label, True, ui.ACCENT), (x, y))
-                timer_text = f"{rem} сек"
-                timer_w = fonts["small"].size(timer_text)[0]
-                screen.blit(
-                    fonts["small"].render(timer_text, True, ui.TEXT),
-                    (x + rect.w - 32 - timer_w, y),
-                )
-                y += 18
-                bar = pygame.Rect(x, y, rect.w - 32, 6)
-                ui.draw_progress_bar(screen, bar, min(1.0, rem / 60.0), ui.ACCENT)
-                y += 16
-            else:
-                screen.blit(fonts["small"].render("  простаивает", True, ui.TEXT_SOFT), (x, y))
-                y += 20
+        col_gap = 16
+        col_w = (inner_w - col_gap) // 2
+        row_top = y
+        x_right = x + col_w + col_gap
 
-            queue = f.get("queue", [])
-            if queue:
-                screen.blit(fonts["small"].render("  В очереди:", True, ui.TEXT_SOFT), (x, y))
-                y += 18
-                for qi, qitem in enumerate(queue[:3]):
-                    qname = ui.product_label(qitem.get("recipe_id", "?"))
-                    qdur = qitem.get("duration_sec", "?")
-                    qline = f"    {qi + 1}. {qname} ({qdur}с)"
-                    screen.blit(fonts["small"].render(qline, True, ui.TEXT), (x, y))
-                    y += 18
-                if len(queue) > 3:
-                    screen.blit(
-                        fonts["small"].render(f"    и ещё {len(queue) - 3}…", True, ui.TEXT_SOFT),
-                        (x, y),
-                    )
-                    y += 18
-        y += 10
+        y = ui.draw_section_header(
+            screen,
+            fonts,
+            x,
+            row_top,
+            "Урожай",
+            "клик · продажа V",
+            line_w=col_w,
+        )
+        y_products = self._product_picker.draw(
+            screen,
+            fonts,
+            x,
+            y,
+            player,
+            self._selected_sell_product_id,
+            max_w=col_w,
+        )
 
-        screen.blit(fonts["body"].render("Магазин:", True, ui.TEXT), (x, y))
-        y += 26
+        y = ui.draw_section_header(
+            screen,
+            fonts,
+            x_right,
+            row_top,
+            "Семена",
+            "посадка T · 1–6",
+            line_w=col_w,
+        )
+        y_seeds = self._seed_picker.draw(
+            screen,
+            fonts,
+            x_right,
+            y,
+            tuple(self._seed_ids),
+            self.selected_seed_id,
+            player,
+            self._plants_meta,
+            max_w=col_w,
+        )
+        y = max(y_products, y_seeds) + 8
+
+        y = ui.draw_section_header(
+            screen, fonts, x, y, "Магазин семян", "мука и корм", line_w=inner_w
+        )
         money = player["money_bestiki"] if player else 0
         self._shop_buttons = []
-        for product_id, price in SHOP_ITEMS:
-            btn_rect = pygame.Rect(x, y, rect.w - 32, 32)
-            btn = ui.ShopButton(btn_rect, product_id, price)
-            self._shop_buttons.append(btn)
-            btn.draw(screen, fonts, mouse, money >= price)
-            y += 36
+        y = ui.draw_shop_grid(
+            screen,
+            fonts,
+            x,
+            y,
+            self._shop_items,
+            money,
+            mouse,
+            self._shop_buttons,
+            max_w=inner_w,
+        )
 
-        feed_y = rect.bottom - 20
-        visible = events[-4:]
+        factory_types = self._factory_types(world)
+        if self._recipes and factory_types:
+            y = ui.draw_section_header(
+                screen, fonts, x, y, "Рецепты", "печь B", line_w=inner_w
+            )
+            y = self._recipe_picker.draw(
+                screen,
+                fonts,
+                x,
+                y,
+                self._recipes,
+                self._selected_recipe_id,
+                player,
+                factory_types,
+                inner_w,
+            )
+
+        if self._animal_items:
+            y = ui.draw_section_header(
+                screen, fonts, x, y, "Животные", "купить C", line_w=inner_w
+            )
+            y = self._animal_picker.draw(
+                screen, fonts, x, y, self._animal_items, self._selected_animal_id, money
+            )
+
+        pid = self.session.player_id
+        y = ui.draw_section_header(screen, fonts, x, y, "Заводы", line_w=inner_w)
+        y = ui.draw_factories_compact(
+            screen,
+            fonts,
+            x,
+            y,
+            world.get("factories", []),
+            pid,
+            self._recipe_by_id,
+            line_w=inner_w,
+        )
+
+        self._sabotage_click_targets = []
+        if self._sabotage_items and self._viewed_opponent_tiles(world):
+            y = ui.draw_section_header(
+                screen, fonts, x, y, "Саботаж", "клетка соперника", line_w=inner_w
+            )
+            for sab in self._sabotage_items:
+                sab_rect = pygame.Rect(x, y, inner_w, 26)
+                can = money >= int(sab.get("price", 0)) and not finished
+                label = f"{sab.get('display_name', sab['sabotage_id'])} · {sab['price']} B"
+                bg = ui.TILE_ENEMY if can else (210, 205, 198)
+                pygame.draw.rect(screen, bg, sab_rect, border_radius=6)
+                screen.blit(
+                    fonts["tiny"].render(label, True, ui.TEXT if can else ui.TEXT_SOFT),
+                    (sab_rect.x + 8, sab_rect.y + 5),
+                )
+                self._sabotage_click_targets.append((sab["sabotage_id"], sab_rect))
+                y += 30
+            y += 4
+
+        feed_y = rect.bottom - 16
+        visible = events[-3:]
         for ev in reversed(visible):
             msg = ui.humanize_event(ev)
             if msg:
-                feed_y -= 18
-                screen.blit(fonts["small"].render(f"· {msg[:48]}", True, ui.TEXT), (x, feed_y))
+                feed_y -= 16
+                screen.blit(
+                    fonts["tiny"].render(f"· {msg[:56]}", True, ui.TEXT_SOFT),
+                    (x, feed_y),
+                )
         if visible:
-            feed_y -= 24
-            screen.blit(fonts["small"].render("Последние новости:", True, ui.TEXT_SOFT), (x, feed_y))
-
-    def _draw_win_overlay(self, world):
-        overlay = pygame.Surface((ui.WIDTH, ui.HEIGHT), pygame.SRCALPHA)
-        overlay.fill((20, 30, 20, 180))
-        self.screen.blit(overlay, (0, 0))
-        win = world.get("win_condition", {})
-        winner = win.get("winner_player_id", "?")
-        you = self.session.player_id
-        if winner == you:
-            title, sub = "Победа!", "Ты первым испёк цель матча"
-            color = ui.OK
-        else:
-            title, sub = "Матч окончен", f"Победил игрок {winner}"
-            color = ui.TEXT_ON_DARK
-        box = pygame.Rect(ui.WIDTH // 2 - 220, ui.HEIGHT // 2 - 90, 440, 180)
-        pygame.draw.rect(self.screen, ui.PANEL_BG, box, border_radius=16)
-        pygame.draw.rect(self.screen, color, box, 4, border_radius=16)
-        self.screen.blit(self.fonts["title"].render(title, True, ui.ACCENT if winner == you else ui.TEXT), (
-            box.x + 40, box.y + 36,
-        ))
-        self.screen.blit(self.fonts["body"].render(sub, True, ui.TEXT), (box.x + 40, box.y + 88))
-        self.screen.blit(
-            self.fonts["small"].render("Esc — вернуться в меню", True, ui.TEXT_SOFT),
-            (box.x + 40, box.y + 128),
-        )
-
-    def _draw_status_bar(self, y: int, text: str, color=ui.TEXT_ON_DARK):
-        surf = self.fonts["small"].render(text, True, color)
-        self.screen.blit(surf, (48, y))
-
+            feed_y -= 18
+            screen.blit(
+                fonts["tiny"].render("Лента", True, ui.TEXT_SOFT),
+                (x, feed_y),
+            )
 
 def main():
     parser = argparse.ArgumentParser(description="Farm Wars client")

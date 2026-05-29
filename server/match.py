@@ -2,22 +2,36 @@
 
 import copy
 import logging
+import os
 import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
+from typing import Callable
 
 from db.loader import GameContentCatalog
-
-log = logging.getLogger("farm_wars.server.match")
-
 from server.action_enricher import enrich_actions_for_tick
+from server.animals import process_buy_animal
+from server.random_events import maybe_random_event_action
+from server.sabotage import process_apply_sabotage
+from server.sell import process_sell_product
 from server.shop import process_buy_product
 from server.world_factory import create_initial_world
 
-SERVER_ONLY_ACTIONS = frozenset({"BUY_PRODUCT"})
+log = logging.getLogger("farm_wars.server.match")
+
+SERVER_ONLY_ACTIONS = frozenset({
+    "BUY_PRODUCT", "SELL_PRODUCT", "BUY_ANIMAL", "APPLY_SABOTAGE",
+})
+SERVER_ONLY_PROCESSORS: dict[str, Callable] = {
+    "BUY_PRODUCT": process_buy_product,
+    "SELL_PRODUCT": process_sell_product,
+    "BUY_ANIMAL": process_buy_animal,
+    "APPLY_SABOTAGE": process_apply_sabotage,
+}
 # Bump when server-only actions change (visible in /api/health).
-SHOP_HANDLER_VERSION = "immediate_v4"
+SHOP_HANDLER_VERSION = "immediate_v7"
+SYNC_HISTORY_MAX = int(os.environ.get("FARM_WARS_SYNC_HISTORY_MAX", "200"))
 
 
 def _action_type(action: dict) -> str:
@@ -51,6 +65,23 @@ class Match:
         self.sync_history: list[dict] = []
         self._unacked_events: list[dict] = []
         self._lock = threading.Lock()
+
+    def roster_payload(self) -> dict:
+        with self._lock:
+            return {
+                "contract_version": "v1",
+                "match_id": self.match_id,
+                "join_code": self.join_code,
+                "status": self.status,
+                "host_player_id": self.host_player_id,
+                "players": [
+                    {
+                        "player_id": p.player_id,
+                        "display_name": p.display_name,
+                    }
+                    for p in self.players
+                ],
+            }
 
     def add_player(self, display_name: str) -> str:
         with self._lock:
@@ -87,8 +118,16 @@ class Match:
             action = envelope["action"]
             action_type = _action_type(action)
 
-            if action_type == "BUY_PRODUCT":
-                self._handle_server_only_immediate(action, process_buy_product, "Shop")
+            processor = SERVER_ONLY_PROCESSORS.get(action_type)
+            if processor is not None:
+                labels = {
+                    "BUY_PRODUCT": "Shop",
+                    "SELL_PRODUCT": "Sell",
+                    "BUY_ANIMAL": "Animals",
+                    "APPLY_SABOTAGE": "Sabotage",
+                }
+                label = labels.get(action_type, action_type)
+                self._handle_server_only_immediate(action, processor, label)
                 return
 
             log.info(
@@ -101,7 +140,6 @@ class Match:
             self.action_queue.append(action)
 
     def _handle_server_only_immediate(self, action: dict, processor, label: str) -> None:
-        """Run server-only action now; never queue for the engine."""
         if self.world_state is None:
             raise ValueError("NO_WORLD_STATE")
         tick_id = self.world_state.get("tick_id", 0)
@@ -120,7 +158,6 @@ class Match:
         self._push_sync(events, bump_tick=False)
 
     def process_tick(self, simulate_tick) -> dict | None:
-        """Run one simulation tick. Returns latest StateSyncEvent or None if not running."""
         with self._lock:
             if self.status != self.RUNNING or self.world_state is None:
                 return None
@@ -135,33 +172,22 @@ class Match:
             for action in actions:
                 action_type = _action_type(action)
                 if action_type in SERVER_ONLY_ACTIONS:
-                    if action_type != action.get("action_type"):
-                        log.warning(
-                            "Normalized action_type %r -> %s",
-                            action.get("action_type"),
-                            action_type,
-                        )
-                if action_type in SERVER_ONLY_ACTIONS:
-                    event = process_buy_product(action, self.world_state, self.catalog, tick_id)
-                    if event:
-                        server_events.append(event)
-                else:
-                    engine_queue.append(action)
+                    log.error(
+                        "Tick %s: server-only action %s in queue (should be immediate only)",
+                        tick_id,
+                        action_type,
+                    )
+                    continue
+                engine_queue.append(action)
+
+            world_event = maybe_random_event_action(self.catalog, tick_id)
+            if world_event is not None:
+                engine_queue.append(world_event)
 
             engine_actions, pre_events = enrich_actions_for_tick(
                 engine_queue, self.world_state, self.catalog, tick_id
             )
             server_events.extend(pre_events)
-            before = len(engine_actions)
-            engine_actions = [
-                a for a in engine_actions
-                if _action_type(a) not in SERVER_ONLY_ACTIONS
-            ]
-            if before != len(engine_actions):
-                log.error(
-                    "Tick %s: stripped BUY_PRODUCT from engine queue (server-only action)",
-                    tick_id,
-                )
 
             tick_input = {
                 "contract_version": "v1",
@@ -212,10 +238,10 @@ class Match:
             return result
 
     def _push_sync(
-            self,
-            events: list[dict],
-            bump_tick: bool,
-            tick_id: int | None = None,
+        self,
+        events: list[dict],
+        bump_tick: bool,
+        tick_id: int | None = None,
     ) -> dict:
         if self.world_state is None:
             raise ValueError("NO_WORLD_STATE")
@@ -232,13 +258,17 @@ class Match:
             "events": events,
         }
         self.sync_history.append(sync)
+        if len(self.sync_history) > SYNC_HISTORY_MAX:
+            self.sync_history = self.sync_history[-SYNC_HISTORY_MAX:]
         return sync
-
 
     def _check_win(self) -> str | None:
         if self.world_state is None:
             return None
-        target = self.world_state["win_condition"]["target_product_id"]
+        win = self.world_state.get("win_condition") or {}
+        target = win.get("target_product_id")
+        if not target:
+            return None
         for player in self.world_state.get("players", []):
             for item in player.get("inventory", []):
                 if item["product_id"] == target and item["amount"] >= 1:

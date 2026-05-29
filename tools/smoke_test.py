@@ -15,11 +15,12 @@ import json
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
 
-build_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "engine_cpp", "build", "Release")
-if os.path.isdir(build_dir):
-    sys.path.insert(0, build_dir)
+from shared.engine_build_paths import ensure_engine_on_syspath
+
+ensure_engine_on_syspath(ROOT)
 
 
 def load_fixture(subdir, name):
@@ -430,6 +431,26 @@ def test_multiple_actions():
 
 # ===== Тесты PLACE_ON_TILE (CP2-CP4) =====
 
+_SEED_BY_PLANT = {
+    "wheat": "wheat_seed",
+    "corn": "corn_seed",
+    "potato": "potato_seed",
+    "tomato": "tomato_seed",
+    "carrot": "carrot_seed",
+    "sunflower": "sunflower_seed",
+}
+
+
+def _place_payload(tile_id: str, plant_id: str, **extra) -> dict:
+    payload = {
+        "tile_id": tile_id,
+        "plant_id": plant_id,
+        "seed_product_id": _SEED_BY_PLANT[plant_id],
+    }
+    payload.update(extra)
+    return payload
+
+
 def test_place_on_tile_basic():
     print("\n--- Test 5a: PLACE_ON_TILE on empty PLANT tile ---")
     sim = get_simulate()
@@ -441,9 +462,9 @@ def test_place_on_tile_basic():
         "actions": [{
             "contract_version": "v1", "player_id": "p1",
             "action_type": "PLACE_ON_TILE",
-            "payload": {"tile_id": "t3", "plant_id": "wheat",
-                        "initial_health": 100, "initial_water_level": 50,
-                        "growth_time_sec": 120, "water_decay_per_tick": 2},
+            "payload": _place_payload("t3", "wheat",
+                        initial_health=100, initial_water_level=50,
+                        growth_time_sec=120, water_decay_per_tick=2),
             "client_ts": 0
         }],
     }
@@ -470,9 +491,9 @@ def test_place_on_tile_last_seed():
         "actions": [{
             "contract_version": "v1", "player_id": "p1",
             "action_type": "PLACE_ON_TILE",
-            "payload": {"tile_id": "t3", "plant_id": "corn",
-                        "initial_health": 100, "initial_water_level": 40,
-                        "growth_time_sec": 150, "water_decay_per_tick": 2},
+            "payload": _place_payload("t3", "corn",
+                        initial_health=100, initial_water_level=40,
+                        growth_time_sec=150, water_decay_per_tick=2),
             "client_ts": 0
         }],
     }
@@ -480,12 +501,10 @@ def test_place_on_tile_last_seed():
     result = sim(tick_input)
     inv = result["next_world_state"]["players"][0]["inventory"]
 
-    # corn должен исчезнуть из инвентаря
-    corn_items = [i for i in inv if i["product_id"] == "corn"]
-    assert len(corn_items) == 0, f"Corn should be removed, got {corn_items}"
+    corn_items = [i for i in inv if i["product_id"] == "corn_seed"]
+    assert len(corn_items) == 0, f"corn_seed should be removed, got {corn_items}"
 
-    # wheat остался нетронутым
-    wheat_items = [i for i in inv if i["product_id"] == "wheat"]
+    wheat_items = [i for i in inv if i["product_id"] == "wheat_seed"]
     assert wheat_items[0]["amount"] == 3
 
     print("  [OK] Last corn used, removed from inventory")
@@ -503,8 +522,8 @@ def test_place_on_tile_occupied():
         "actions": [{
             "contract_version": "v1", "player_id": "p1",
             "action_type": "PLACE_ON_TILE",
-            "payload": {"tile_id": "t1", "plant_id": "wheat",
-                        "initial_health": 100, "initial_water_level": 50},
+            "payload": _place_payload("t1", "wheat",
+                        initial_health=100, initial_water_level=50),
             "client_ts": 0
         }],
     }
@@ -519,15 +538,15 @@ def test_place_on_tile_wrong_zone():
     sim = get_simulate()
     world = load_fixture("world_state", "minimal_world.json")
 
-    # t4 - ANIMAL зона
+    # t7 - ANIMAL зона
     tick_input = {
         "contract_version": "v1", "tick_id": 5,
         "world_state": world,
         "actions": [{
             "contract_version": "v1", "player_id": "p1",
             "action_type": "PLACE_ON_TILE",
-            "payload": {"tile_id": "t4", "plant_id": "wheat",
-                        "initial_health": 100, "initial_water_level": 50},
+            "payload": _place_payload("t7", "wheat",
+                        initial_health=100, initial_water_level=50),
             "client_ts": 0
         }],
     }
@@ -549,14 +568,14 @@ def test_place_on_tile_no_inventory():
         "actions": [{
             "contract_version": "v1", "player_id": "p1",
             "action_type": "PLACE_ON_TILE",
-            "payload": {"tile_id": "t3", "plant_id": "potato",
-                        "initial_health": 100, "initial_water_level": 60},
+            "payload": _place_payload("t3", "potato",
+                        initial_health=100, initial_water_level=60),
             "client_ts": 0
         }],
     }
 
     result = sim(tick_input)
-    _check_contract_error(result, "MISSING_FIELD", "No potato")
+    _check_contract_error(result, "MISSING_FIELD", "No potato_seed")
     print("  [OK]")
 
 
@@ -572,8 +591,8 @@ def test_place_on_tile_not_owned():
         "actions": [{
             "contract_version": "v1", "player_id": "p2",
             "action_type": "PLACE_ON_TILE",
-            "payload": {"tile_id": "t3", "plant_id": "wheat",
-                        "initial_health": 100, "initial_water_level": 50},
+            "payload": _place_payload("t3", "wheat",
+                        initial_health=100, initial_water_level=50),
             "client_ts": 0
         }],
     }
@@ -594,8 +613,8 @@ def test_place_on_tile_nonexistent():
         "actions": [{
             "contract_version": "v1", "player_id": "p1",
             "action_type": "PLACE_ON_TILE",
-            "payload": {"tile_id": "nonexistent_zzz", "plant_id": "wheat",
-                        "initial_health": 100, "initial_water_level": 50},
+            "payload": _place_payload("nonexistent_zzz", "wheat",
+                        initial_health=100, initial_water_level=50),
             "client_ts": 0
         }],
     }
@@ -613,34 +632,34 @@ def test_place_on_tile_three_in_row():
     # Первый: сажаем wheat на t3
     r1 = sim({"contract_version": "v1", "tick_id": 1, "world_state": world, "actions": [{
         "contract_version": "v1", "player_id": "p1", "action_type": "PLACE_ON_TILE",
-        "payload": {"tile_id": "t3", "plant_id": "wheat", "initial_health": 100, "initial_water_level": 50,
-                    "growth_time_sec": 120, "water_decay_per_tick": 2},
+        "payload": _place_payload("t3", "wheat", initial_health=100, initial_water_level=50,
+                    growth_time_sec=120, water_decay_per_tick=2),
         "client_ts": 0
     }]})
     inv1 = r1["next_world_state"]["players"][0]["inventory"]
-    assert [i for i in inv1 if i["product_id"] == "wheat"][0]["amount"] == 2
+    assert [i for i in inv1 if i["product_id"] == "wheat_seed"][0]["amount"] == 2
 
     # Второй: используем состояние из r1
     r2 = sim({"contract_version": "v1", "tick_id": 2, "world_state": r1["next_world_state"], "actions": [{
         "contract_version": "v1", "player_id": "p1", "action_type": "PLACE_ON_TILE",
-        "payload": {"tile_id": "t3", "plant_id": "wheat", "initial_health": 100, "initial_water_level": 50,
-                    "growth_time_sec": 120, "water_decay_per_tick": 2},
+        "payload": _place_payload("t3", "wheat", initial_health=100, initial_water_level=50,
+                    growth_time_sec=120, water_decay_per_tick=2),
         "client_ts": 0
     }]})
     inv2 = r2["next_world_state"]["players"][0]["inventory"]
     # t3 уже занята — должно быть CONTRACT_ERROR, инвентарь НЕ изменился
-    assert [i for i in inv2 if i["product_id"] == "wheat"][0]["amount"] == 2, \
+    assert [i for i in inv2 if i["product_id"] == "wheat_seed"][0]["amount"] == 2, \
         "Inventory should NOT change on failed placement"
 
     # Третий: используем оригинал, сажаем corn (1 шт)
     r3 = sim({"contract_version": "v1", "tick_id": 3, "world_state": world, "actions": [{
         "contract_version": "v1", "player_id": "p1", "action_type": "PLACE_ON_TILE",
-        "payload": {"tile_id": "t3", "plant_id": "corn", "initial_health": 100, "initial_water_level": 40,
-                    "growth_time_sec": 150, "water_decay_per_tick": 2},
+        "payload": _place_payload("t3", "corn", initial_health=100, initial_water_level=40,
+                    growth_time_sec=150, water_decay_per_tick=2),
         "client_ts": 0
     }]})
     inv3 = r3["next_world_state"]["players"][0]["inventory"]
-    corn_items = [i for i in inv3 if i["product_id"] == "corn"]
+    corn_items = [i for i in inv3 if i["product_id"] == "corn_seed"]
     assert len(corn_items) == 0  # исчез
 
     print("  [OK] 3 placements: inventory tracked correctly, errors don't consume items")
@@ -748,25 +767,25 @@ def test_growth_fields_not_required():
     tick_input = {"contract_version": "v1", "tick_id": 42, "world_state": world, "actions": []}
     result = sim(tick_input)
     t1 = result["next_world_state"]["map"]["tiles"][0]
-    # Без decay: испарение по умолчанию = 1/тик
-    assert t1["water_level"] == 29, f"Water decays by default 1/tick: 30 -> 29, got {t1['water_level']}"
+    # Без decay: испарение по умолчанию = 0/тик
+    assert t1["water_level"] == 30, f"Water unchanged without decay field: got {t1['water_level']}"
     assert t1["growth_elapsed_sec"] == 1, f"Growth still happens, got {t1.get('growth_elapsed_sec')}"
-    print("  [OK] Old-format tiles: default evaporation 1/tick, growth ++")
+    print("  [OK] Old-format tiles: no default evaporation, growth ++")
 
 
 def test_evaporation_on_empty_tiles():
     print("\n--- Test 6g: Empty tiles lose 1 water/tick (evaporation) ---")
     sim = get_simulate()
     world = load_fixture("world_state", "minimal_world.json")
-    # t3: empty PLANT, water=50 → должно стать 49
-    # t4: empty ANIMAL, water=50 → должно стать 49
+    # t3: empty PLANT, water=40 — без испарения на пустых (DEFAULT 0)
     tick_input = {"contract_version": "v1", "tick_id": 1, "world_state": world, "actions": []}
     result = sim(tick_input)
-    t3 = result["next_world_state"]["map"]["tiles"][2]  # t3
-    t4 = result["next_world_state"]["map"]["tiles"][3]  # t4
-    assert t3["water_level"] == 49, f"t3 empty PLANT: 50 -> 49, got {t3['water_level']}"
-    assert t4["water_level"] == 49, f"t4 empty ANIMAL: 50 -> 49, got {t4['water_level']}"
-    print("  [OK] Empty tiles evaporate: t3=49, t4=49")
+    tiles = result["next_world_state"]["map"]["tiles"]
+    t3 = next(t for t in tiles if t["tile_id"] == "t3")
+    t7 = next(t for t in tiles if t["tile_id"] == "t7")
+    assert t3["water_level"] == 40, f"t3 empty PLANT unchanged, got {t3['water_level']}"
+    assert t7["water_level"] == 0, f"t7 animal pen unchanged, got {t7['water_level']}"
+    print("  [OK] Empty plant tile stable; animal pen unchanged")
 
 
 # ===== Тесты HARVEST_PLANT (engine_cpp/003 Phase 2) =====
@@ -777,6 +796,7 @@ def test_harvest_ripe_plant():
     world = load_fixture("world_state", "minimal_world.json")
     # t1: wheat, growth_elapsed=0, growth_time=120. Сделаем зрелым — поставим elapsed=200
     world["map"]["tiles"][0]["growth_elapsed_sec"] = 200
+    world["map"]["tiles"][0]["water_level"] = 60
 
     tick_input = {"contract_version": "v1", "tick_id": 5, "world_state": world, "actions": [{
         "contract_version": "v1", "player_id": "p1",
@@ -785,7 +805,7 @@ def test_harvest_ripe_plant():
     }]}
 
     result = sim(tick_input)
-    events = result["events"]
+    events = [e for e in result["events"] if e["event_type"] == "PLANT_HARVESTED"]
     assert len(events) == 1
     assert events[0]["event_type"] == "PLANT_HARVESTED"
     assert events[0]["payload"]["product_id"] == "wheat"
@@ -798,7 +818,7 @@ def test_harvest_ripe_plant():
     # Продукт в инвентаре
     inv = result["next_world_state"]["players"][0]["inventory"]
     wheat_item = next(i for i in inv if i["product_id"] == "wheat")
-    assert wheat_item["amount"] >= 2  # было 3 + 2 от сбора
+    assert wheat_item["amount"] == 2  # harvest only (inventory has seeds, not crops)
     print("  [OK] Wheat harvested, +2, tile cleared")
 
 
@@ -807,8 +827,7 @@ def test_harvest_water_unchanged():
     sim = get_simulate()
     world = load_fixture("world_state", "minimal_world.json")
     world["map"]["tiles"][0]["growth_elapsed_sec"] = 200
-    orig_water = world["map"]["tiles"][0]["water_level"]  # 30
-
+    world["map"]["tiles"][0]["water_level"] = 60
     tick_input = {"contract_version": "v1", "tick_id": 5, "world_state": world, "actions": [{
         "contract_version": "v1", "player_id": "p1",
         "action_type": "HARVEST_PLANT",
@@ -817,9 +836,8 @@ def test_harvest_water_unchanged():
 
     result = sim(tick_input)
     tile = result["next_world_state"]["map"]["tiles"][0]
-    # После сбора грядка пустая → испарение по умолчанию = 1/тик: 30 - 1 = 29
-    assert tile["water_level"] == 29, f"Water should be 29 (30-1 evap on empty), got {tile['water_level']}"
-    print("  [OK] Water unchanged by harvest, only 1/tick evaporation on empty")
+    assert tile["water_level"] == 60, f"Water should stay 60 after harvest on empty tile, got {tile['water_level']}"
+    print("  [OK] Water unchanged by harvest")
 
 
 def test_harvest_not_ripe():
@@ -902,6 +920,7 @@ def test_harvest_without_growth_fields():
     # Убираем growth поля — растение считается созревшим
     del world["map"]["tiles"][0]["growth_elapsed_sec"]
     del world["map"]["tiles"][0]["growth_time_sec"]
+    world["map"]["tiles"][0]["water_level"] = 60
 
     tick_input = {"contract_version": "v1", "tick_id": 5, "world_state": world, "actions": [{
         "contract_version": "v1", "player_id": "p1",
@@ -1058,7 +1077,7 @@ def test_stub_actions_silently_ignored():
     sim = get_simulate()
     world = load_fixture("world_state", "minimal_world.json")
 
-    for action_type in ["FEED_ANIMAL", "APPLY_SABOTAGE", "USE_COUNTERMEASURE"]:
+    for action_type in ["APPLY_SABOTAGE", "USE_COUNTERMEASURE"]:
         tick_input = {"contract_version": "v1", "tick_id": 1, "world_state": world, "actions": [{
             "contract_version": "v1", "player_id": "p1",
             "action_type": action_type,
@@ -1069,7 +1088,126 @@ def test_stub_actions_silently_ignored():
         errors = [e for e in result["events"] if e["event_type"] == "CONTRACT_ERROR"]
         assert len(errors) == 0, f"{action_type} should not cause error"
 
-    print("  [OK] FEED_ANIMAL, APPLY_SABOTAGE, USE_COUNTERMEASURE ignored gracefully")
+    print("  [OK] APPLY_SABOTAGE, USE_COUNTERMEASURE ignored gracefully")
+
+
+def test_harvest_not_ready_low_water():
+    print("\n--- Test 7h: Harvest with water < 50 -> NOT_READY ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+    tile = world["map"]["tiles"][0]
+    tile["water_level"] = 10
+    tile["growth_elapsed_sec"] = tile.get("growth_time_sec", 120)
+
+    tick_input = {
+        "contract_version": "v1",
+        "tick_id": 1,
+        "world_state": world,
+        "actions": [{
+            "contract_version": "v1",
+            "player_id": "p1",
+            "action_type": "HARVEST_PLANT",
+            "payload": {"tile_id": tile["tile_id"]},
+            "client_ts": 0,
+        }],
+    }
+    result = sim(tick_input)
+    failed = [e for e in result["events"] if e["event_type"] == "HARVEST_FAILED"]
+    assert failed and failed[0]["payload"]["reason"] == "NOT_READY"
+    print("  [OK] Low water blocks harvest")
+
+
+def test_place_sets_initial_water():
+    print("\n--- Test 5i: PLACE_ON_TILE sets water_level from initial_water_level ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+    tile = world["map"]["tiles"][2]
+    tile["occupant_type"] = "EMPTY"
+    tile["water_level"] = 5
+
+    tick_input = {
+        "contract_version": "v1",
+        "tick_id": 1,
+        "world_state": world,
+        "actions": [{
+            "contract_version": "v1",
+            "player_id": "p1",
+            "action_type": "PLACE_ON_TILE",
+            "payload": _place_payload(
+                tile["tile_id"],
+                "wheat",
+                initial_health=100,
+                initial_water_level=80,
+                growth_time_sec=30,
+                water_decay_per_tick=2,
+            ),
+            "client_ts": 0,
+        }],
+    }
+    result = sim(tick_input)
+    placed = [e for e in result["events"] if e["event_type"] == "PLANT_PLACED"]
+    assert placed, "expected PLANT_PLACED"
+    t = result["next_world_state"]["map"]["tiles"][2]
+    # 80 from plant, then passive evaporation (decay=2) on same tick
+    assert t["water_level"] == 78, f"expected 78 after plant+evap, got {t['water_level']}"
+    print("  [OK] water_level set from initial_water_level (78 after 1st tick evap)")
+
+
+# ===== Animals (engine_cpp/005) =====
+
+def test_animals_feed_and_milk():
+    print("\n--- Test 11: FEED_ANIMAL + passive milk ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+    tile = next(t for t in world["map"]["tiles"] if t["tile_id"] == "t7")
+    tile["occupant_type"] = "ANIMAL"
+    tile["occupant_id"] = "cow"
+    tile["health"] = 100
+    tile["production_elapsed_sec"] = 0
+    tile["production_interval_sec"] = 3
+    tile["product_id"] = "milk"
+    tile["hunger_ticks"] = 0
+    world["players"][0]["inventory"].append({"product_id": "feed", "amount": 2})
+
+    tick_input = {
+        "contract_version": "v1",
+        "tick_id": 1,
+        "world_state": world,
+        "actions": [{
+            "contract_version": "v1",
+            "player_id": "p1",
+            "action_type": "FEED_ANIMAL",
+            "payload": {
+                "tile_id": "t7",
+                "production_interval_sec": 3,
+                "product_id": "milk",
+            },
+            "client_ts": 0,
+        }],
+    }
+    result = sim(tick_input)
+    assert any(e["event_type"] == "ANIMAL_FED" for e in result["events"])
+
+    ws = result["next_world_state"]
+    produced_any = False
+    for tick in range(2, 8):
+        tick_input = {
+            "contract_version": "v1",
+            "tick_id": tick,
+            "world_state": ws,
+            "actions": [],
+        }
+        result = sim(tick_input)
+        ws = result["next_world_state"]
+        if any(e["event_type"] == "ANIMAL_PRODUCED" for e in result["events"]):
+            produced_any = True
+            break
+
+    assert produced_any, "expected ANIMAL_PRODUCED within passive ticks"
+    inv = ws["players"][0]["inventory"]
+    milk = next((i for i in inv if i["product_id"] == "milk"), None)
+    assert milk and milk["amount"] >= 1
+    print("  [OK] Fed cow, milk produced after interval")
 
 
 # ===== Тесты APPLY_EVENT (engine_cpp/004) =====
@@ -1174,6 +1312,12 @@ def test_event_unknown():
 
 # ===== Сравнение stub vs C++ =====
 
+def _assert_stub_cpp_equal(cpp_sim, stub_sim, tick_input: dict, label: str) -> None:
+    cpp_result = cpp_sim(tick_input)
+    stub_result = stub_sim(tick_input)
+    assert cpp_result == stub_result, f"CPP and STUB differ on {label}!"
+
+
 def test_stub_vs_cpp():
     print("\n--- Test 3: Stub vs C++ comparison ---")
 
@@ -1188,18 +1332,36 @@ def test_stub_vs_cpp():
 
     world = load_fixture("world_state", "minimal_world.json")
     actions = load_fixture("actions", "actions_water_and_recipe.json")
-    tick_input = {"contract_version": "v1", "tick_id": 5, "world_state": world, "actions": actions}
+    _assert_stub_cpp_equal(
+        cpp_sim,
+        stub_sim,
+        {"contract_version": "v1", "tick_id": 5, "world_state": world, "actions": actions},
+        "water+recipe fixture",
+    )
+    print("  [OK] Stub and C++ outputs are IDENTICAL (recipe fixture)")
 
-    cpp_result = cpp_sim(tick_input)
-    stub_result = stub_sim(tick_input)
-
-    assert cpp_result == stub_result, "CPP and STUB outputs DIFFER!"
-    print("  [OK] Stub and C++ outputs are IDENTICAL")
-
-    # Сравниваем и для ошибок валидации
     bad = {"contract_version": "v99", "tick_id": 1, "world_state": world, "actions": []}
-    assert cpp_sim(bad) == stub_sim(bad), "CPP and STUB differ on validation errors!"
+    _assert_stub_cpp_equal(cpp_sim, stub_sim, bad, "validation error")
     print("  [OK] Validation errors also match")
+
+    harvest_world = load_fixture("world_state", "minimal_world.json")
+    t0 = harvest_world["map"]["tiles"][0]
+    t0["water_level"] = 60
+    t0["growth_elapsed_sec"] = t0.get("growth_time_sec", 120)
+    harvest_action = [{
+        "contract_version": "v1",
+        "player_id": "p1",
+        "action_type": "HARVEST_PLANT",
+        "payload": {"tile_id": t0["tile_id"]},
+        "client_ts": 0,
+    }]
+    _assert_stub_cpp_equal(
+        cpp_sim,
+        stub_sim,
+        {"contract_version": "v1", "tick_id": 2, "world_state": harvest_world, "actions": harvest_action},
+        "harvest",
+    )
+    print("  [OK] Harvest path matches")
 
 
 # ===== Main =====
@@ -1251,11 +1413,14 @@ def main():
     test_harvest_not_owner()
     test_harvest_nonexistent_tile()
     test_harvest_without_growth_fields()
+    test_harvest_not_ready_low_water()
+    test_place_sets_initial_water()
     test_factory_tick_countdown()
     test_factory_recipe_finishes()
     test_factory_multiple_recipes()
     test_factory_queue_auto_start()
     test_stub_actions_silently_ignored()
+    test_animals_feed_and_milk()
     test_event_drought()
     test_event_rain()
     test_event_rain_water_caps_at_100()

@@ -25,6 +25,7 @@ CREATE TABLE plants
 (
     plant_id             TEXT PRIMARY KEY,
     product_id           TEXT    NOT NULL REFERENCES products (product_id),
+    seed_product_id      TEXT    NOT NULL REFERENCES products (product_id),
     display_name         TEXT    NOT NULL,
     growth_time_sec      INTEGER NOT NULL CHECK (growth_time_sec > 0),
     water_decay_per_tick INTEGER NOT NULL DEFAULT 1 CHECK (water_decay_per_tick >= 0),
@@ -75,7 +76,7 @@ CREATE TABLE random_events
     event_id       TEXT PRIMARY KEY,
     display_name   TEXT    NOT NULL,
     effect_type    TEXT    NOT NULL CHECK (
-        effect_type IN ('DROUGHT', 'FLOOD', 'EARTHQUAKE', 'EPIDEMIC')
+        effect_type IN ('DROUGHT', 'FLOOD', 'RAIN', 'EARTHQUAKE', 'EPIDEMIC')
         ),
     duration_ticks INTEGER NOT NULL DEFAULT 10 CHECK (duration_ticks > 0),
     severity       REAL    NOT NULL DEFAULT 1.0 CHECK (severity > 0)

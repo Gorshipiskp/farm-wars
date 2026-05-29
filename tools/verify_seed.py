@@ -14,9 +14,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(ROOT, "db", "farm_wars.db")
 
 EXPECTED = {
-    "plants": 3,
-    "animals": 1,
-    "recipes": 2,
+    "plants": 6,
+    "animals": 4,
+    "recipes": 8,
     "random_events": 1,
     "sabotages": 1,
     "countermeasures": 1,

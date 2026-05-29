@@ -107,6 +107,9 @@ class ServerClient:
     def poll_sync(self, match_id: str, since_tick: int = 0) -> dict:
         return self._get(f"/api/matches/{match_id}/sync", {"since_tick": str(since_tick)})
 
+    def poll_roster(self, match_id: str) -> dict:
+        return self._get(f"/api/matches/{match_id}/roster")
+
     def make_action(self, player_id: str, action_type: str, payload: dict) -> dict:
         return {
             "contract_version": "v1",

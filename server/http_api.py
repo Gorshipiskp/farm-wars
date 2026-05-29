@@ -88,6 +88,14 @@ class FarmWarsHandler(BaseHTTPRequestHandler):
         query = parse_qs(parsed.query)
 
         m = MATCH_ID_RE.match(path)
+        if m and m.group(2) == "/roster":
+            match_id = m.group(1)
+            try:
+                self._json_response(200, self.game_server.get_roster(match_id))
+            except KeyError:
+                self._json_error(404, "UNKNOWN_MATCH", "Match not found")
+            return
+
         if m and (m.group(2) in ("/sync", "/state", None)):
             match_id = m.group(1)
             since_tick = int(query.get("since_tick", ["0"])[0])
@@ -102,6 +110,7 @@ class FarmWarsHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/health":
+            from server.catalog_api import catalog_for_client
             from server.match import SHOP_HANDLER_VERSION
 
             self._json_response(200, {
@@ -109,6 +118,7 @@ class FarmWarsHandler(BaseHTTPRequestHandler):
                 "status": "ok",
                 "engine": self.game_server.engine_name,
                 "shop_handler": SHOP_HANDLER_VERSION,
+                "catalog": catalog_for_client(self.game_server.catalog),
             })
             return
 

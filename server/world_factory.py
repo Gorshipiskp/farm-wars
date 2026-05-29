@@ -27,9 +27,15 @@ def create_initial_world(
     """
     template = _load_fixture_template()
     win_product = catalog.default_win_product_id()
-    starter_inventory = []
-    if template.get("players"):
-        starter_inventory = copy.deepcopy(template["players"][0].get("inventory", []))
+    starter_inventory = [
+        {"product_id": "wheat_seed", "amount": 3},
+        {"product_id": "corn_seed", "amount": 1},
+        {"product_id": "potato_seed", "amount": 1},
+        {"product_id": "tomato_seed", "amount": 1},
+        {"product_id": "carrot_seed", "amount": 1},
+        {"product_id": "flour", "amount": 1},
+        {"product_id": "feed", "amount": 3},
+    ]
 
     world_players = []
     all_tiles = []
@@ -37,7 +43,7 @@ def create_initial_world(
 
     for index, (player_id, display_name) in enumerate(players):
         prefix = f"p{index + 1}"
-        money = 100
+        money = 120
 
         world_players.append({
             "player_id": player_id,

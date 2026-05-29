@@ -1,77 +1,121 @@
--- Farm Wars — minimal seed for vertical slice
--- Checkpoint 2: Seed Approved (001.NIKITA.SQLITE_SCHEMA_AND_SEED_MINIMAL)
--- IDs aligned with fixtures: bread, wheat, corn, BAKERY, cake.
+-- Farm Wars — game content seed (plants, animals, recipes, events, PvP)
+-- growth_time_sec / production_interval_sec = simulation ticks (see shared/game_pacing.py)
 
-PRAGMA
-foreign_keys = ON;
+PRAGMA foreign_keys = ON;
 
 -- ---------------------------------------------------------------------------
 -- Products
 -- ---------------------------------------------------------------------------
 
 INSERT INTO products (product_id, display_name, category, base_sell_price)
-VALUES ('wheat', 'Пшеница', 'RAW', 5),
-       ('corn', 'Кукуруза', 'RAW', 6),
-       ('potato', 'Картофель', 'RAW', 4),
-       ('flour', 'Мука', 'PROCESSED', 8),
-       ('bread', 'Хлеб', 'PROCESSED', 20),
-       ('cake', 'Торт', 'PROCESSED', 35),
-       ('milk', 'Молоко', 'RAW', 10),
-       ('feed', 'Корм', 'FEED', 3);
+VALUES
+    -- Seeds (plant only; bought in shop)
+    ('wheat_seed', 'Семена пшеницы', 'SEED', 3),
+    ('corn_seed', 'Семена кукурузы', 'SEED', 4),
+    ('potato_seed', 'Семена картофеля', 'SEED', 3),
+    ('tomato_seed', 'Семена томата', 'SEED', 5),
+    ('carrot_seed', 'Семена моркови', 'SEED', 3),
+    ('sunflower_seed', 'Семена подсолнечника', 'SEED', 4),
+    -- RAW crops (harvest & sell)
+    ('wheat', 'Пшеница', 'RAW', 5),
+    ('corn', 'Кукуруза', 'RAW', 6),
+    ('potato', 'Картофель', 'RAW', 4),
+    ('tomato', 'Помидор', 'RAW', 7),
+    ('carrot', 'Морковь', 'RAW', 5),
+    ('sunflower', 'Подсолнечник', 'RAW', 6),
+    ('milk', 'Молоко', 'RAW', 10),
+    ('egg', 'Яйцо', 'RAW', 8),
+    ('wool', 'Шерсть', 'RAW', 12),
+    ('pork', 'Свинина', 'RAW', 14),
+    -- Processed
+    ('flour', 'Мука', 'PROCESSED', 8),
+    ('bread', 'Хлеб', 'PROCESSED', 20),
+    ('cake', 'Торт', 'PROCESSED', 35),
+    ('cheese', 'Сыр', 'PROCESSED', 22),
+    ('butter', 'Масло', 'PROCESSED', 18),
+    ('sausage', 'Колбаса', 'PROCESSED', 28),
+    ('pie', 'Пирог', 'PROCESSED', 32),
+    ('soup', 'Суп', 'PROCESSED', 24),
+    ('omelette', 'Омлет', 'PROCESSED', 26),
+    -- Feed
+    ('feed', 'Корм', 'FEED', 3);
 
 -- ---------------------------------------------------------------------------
--- Plants (3) — plant_id matches catalog; occupant_id in world is instance id
+-- Plants (6)
 -- ---------------------------------------------------------------------------
 
-INSERT INTO plants (plant_id, product_id, display_name,
+INSERT INTO plants (plant_id, product_id, seed_product_id, display_name,
                     growth_time_sec, water_decay_per_tick, initial_water_level)
-VALUES ('wheat', 'wheat', 'Пшеница', 5, 2, 50),
-       ('corn', 'corn', 'Кукуруза', 5, 2, 40),
-       ('potato', 'potato', 'Картофель', 5, 1, 60);
+VALUES ('wheat', 'wheat', 'wheat_seed', 'Пшеница', 400, 0, 55),
+       ('corn', 'corn', 'corn_seed', 'Кукуруза', 480, 0, 45),
+       ('potato', 'potato', 'potato_seed', 'Картофель', 320, 0, 60),
+       ('tomato', 'tomato', 'tomato_seed', 'Помидор', 360, 0, 50),
+       ('carrot', 'carrot', 'carrot_seed', 'Морковь', 340, 0, 55),
+       ('sunflower', 'sunflower', 'sunflower_seed', 'Подсолнечник', 420, 0, 48);
 
 -- ---------------------------------------------------------------------------
--- Animals (1)
+-- Animals (4)
 -- ---------------------------------------------------------------------------
 
 INSERT INTO animals (animal_id, product_id, display_name,
                      feed_product_id, production_interval_sec)
-VALUES ('cow', 'milk', 'Корова', 'feed', 180);
+VALUES ('cow', 'milk', 'Корова', 'feed', 100),
+       ('chicken', 'egg', 'Курица', 'feed', 80),
+       ('sheep', 'wool', 'Овца', 'feed', 120),
+       ('pig', 'pork', 'Свинья', 'feed', 140);
 
 -- ---------------------------------------------------------------------------
--- Buildings — each factory has its own time_coef for price formula
+-- Buildings
 -- ---------------------------------------------------------------------------
 
 INSERT INTO buildings (building_type, display_name, time_coef)
-VALUES ('BAKERY', 'Хлебопекарня', 2.0),
-       ('DAIRY', 'Молочный', 1.5),
-       ('MEAT', 'Мясокомбинат', 2.5);
+VALUES ('BAKERY', 'Пекарня', 2.0),
+       ('DAIRY', 'Сыроварня', 1.5),
+       ('MEAT', 'Мясной цех', 2.5);
 
 -- ---------------------------------------------------------------------------
--- Recipes (2) — win target: bread (FIRST_PRODUCT in fixtures)
--- bread: price_override NULL -> formula uses BAKERY.time_coef
--- cake:  price_override set   -> fixed price for formula-fallback tests (CP4)
+-- Recipes (8) — win target: bread by default
 -- ---------------------------------------------------------------------------
 
 INSERT INTO recipes (recipe_id, building_type, output_product_id,
                      production_time_sec, price_override)
-VALUES ('bread', 'BAKERY', 'bread', 30, NULL),
-       ('cake', 'BAKERY', 'cake', 60, 100);
+VALUES ('bread', 'BAKERY', 'bread', 240, NULL),
+       ('cake', 'BAKERY', 'cake', 520, 100),
+       ('pie', 'BAKERY', 'pie', 360, NULL),
+       ('soup', 'BAKERY', 'soup', 280, NULL),
+       ('omelette', 'BAKERY', 'omelette', 200, NULL),
+       ('cheese', 'DAIRY', 'cheese', 300, NULL),
+       ('butter', 'DAIRY', 'butter', 220, NULL),
+       ('sausage', 'MEAT', 'sausage', 320, NULL);
 
 INSERT INTO recipe_ingredients (recipe_id, product_id, amount)
 VALUES ('bread', 'flour', 2),
        ('bread', 'wheat', 1),
        ('cake', 'flour', 3),
-       ('cake', 'milk', 2);
+       ('cake', 'milk', 2),
+       ('pie', 'flour', 2),
+       ('pie', 'egg', 2),
+       ('pie', 'wheat', 1),
+       ('soup', 'tomato', 2),
+       ('soup', 'potato', 1),
+       ('soup', 'carrot', 1),
+       ('omelette', 'egg', 3),
+       ('omelette', 'milk', 1),
+       ('cheese', 'milk', 2),
+       ('butter', 'milk', 1),
+       ('butter', 'flour', 1),
+       ('sausage', 'pork', 2),
+       ('sausage', 'flour', 1);
 
 -- ---------------------------------------------------------------------------
--- Random events (1 per effect_type for MVP catalog)
+-- Random events
 -- ---------------------------------------------------------------------------
 
 INSERT INTO random_events (event_id, display_name, effect_type, duration_ticks, severity)
-VALUES ('drought', 'Засуха', 'DROUGHT', 15, 1.0),
-       ('flood', 'Наводнение', 'FLOOD', 12, 1.2),
-       ('earthquake', 'Землетрясение', 'EARTHQUAKE', 8, 1.5),
-       ('epidemic', 'Эпидемия', 'EPIDEMIC', 20, 0.8);
+VALUES ('drought', 'Засуха', 'DROUGHT', 60, 1.0),
+       ('rain', 'Дождь', 'RAIN', 48, 1.2),
+       ('earthquake', 'Землетрясение', 'EARTHQUAKE', 32, 1.5),
+       ('epidemic', 'Эпидемия', 'EPIDEMIC', 80, 0.8);
 
 -- ---------------------------------------------------------------------------
 -- Sabotages

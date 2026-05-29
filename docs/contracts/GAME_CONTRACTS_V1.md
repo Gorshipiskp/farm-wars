@@ -31,7 +31,11 @@
 - `START_RECIPE`
 - `PLACE_ON_TILE`
 - `HARVEST_PLANT`
+- `APPLY_EVENT` (сервер или тесты; `player_id` может быть `__world__`)
 - `BUY_PRODUCT` (server-only; не передаётся в C++ движок)
+- `BUY_ANIMAL` (server-only)
+- `APPLY_SABOTAGE` (server-only PvP)
+- `FEED_ANIMAL` (клиент → сервер обогащает → движок)
 
 ### `ServerEvent`
 
@@ -54,6 +58,24 @@
 - `PLANT_HARVESTED`
 - `HARVEST_FAILED`
 - `PLANT_DIED`
+- `EVENT_TRIGGERED`
+- `ANIMAL_PURCHASED` / `ANIMAL_PURCHASE_FAILED`
+- `ANIMAL_FED` / `FEED_FAILED`
+- `ANIMAL_PRODUCED`
+- `SABOTAGE_APPLIED` / `SABOTAGE_FAILED`
+
+### `APPLY_EVENT` — payload (сервер → движок)
+
+- `event_type: string` (required) — `DROUGHT`, `RAIN`, `FLOOD` (alias `RAIN`), `EARTHQUAKE`, `EPIDEMIC`
+
+Эффекты меняют параметры симуляции (decay, время завода), не мгновенный урон по всей карте. См. `docs/specs/engine_cpp/004.SANYA.RANDOM_EVENTS.md`.
+
+### `EVENT_TRIGGERED` — payload
+
+- `event_type: string` (required)
+- `severity: number` (optional)
+- `affected_tiles: number` (optional)
+- `display_name: string` (optional, для UI)
 
 ### `BUY_PRODUCT` — payload (клиент → сервер)
 
@@ -83,8 +105,24 @@
 - `initial_water_level: number` (из `plants.initial_water_level` в SQLite)
 - `growth_time_sec: number` (из `plants.growth_time_sec` в SQLite)
 - `water_decay_per_tick: number` (из `plants.water_decay_per_tick` в SQLite)
+- `seed_product_id: string` — пакет семян в инвентаре (категория `SEED`, например `wheat_seed`)
+- `crop_product_id: string` — урожай при сборе (категория `RAW`, например `wheat`)
+
+Движок списывает `seed_product_id` из инвентаря; на клетке `occupant_id` = `crop_product_id`.
+
+**Магазин:** покупка только семян (`*_seed`) и доп. товаров (`flour`, `feed`). **Продажа:** только `RAW` и `PROCESSED` (урожай и готовые изделия), не семена.
 
 См. `docs/specs/engine_cpp/002.SANYA.PLACE_ON_TILE.md`, `docs/specs/server/002.NIKITA.SERVER_ENRICH_PLACE_ON_TILE.md`.
+
+### `WATER_PLANT` — payload (клиент → движок)
+
+- `tile_id: string` (required)
+
+Правила в движке:
+- Клетка существует, `owner_player_id == player_id` → иначе `CONTRACT_ERROR` (`INVALID_TYPE`)
+- Успех: `water_level = 100`, событие `PLANT_WATERED`
+
+См. `docs/specs/server/009.NIKITA.TILE_OWNER_VALIDATION.md`.
 
 ### `HARVEST_PLANT` — payload (клиент → движок)
 
@@ -93,6 +131,8 @@
 Правила в движке:
 - Клетка существует, `owner_player_id == player_id`, `occupant_type == "PLANT"` → иначе `HARVEST_FAILED`
 - Если есть `growth_time_sec`: `growth_elapsed_sec >= growth_time_sec` → иначе `HARVEST_FAILED` (`NOT_RIPE`)
+- Если `water_level < 50` → `HARVEST_FAILED` (`NOT_READY`)
+- При посадке: `water_level` грядки = `initial_water_level` из payload (cap 0–100)
 - Успех: `+2` продукта в инвентарь, клетка → `EMPTY`, событие `PLANT_HARVESTED`
 - `water_level` грядки не изменяется при сборе
 

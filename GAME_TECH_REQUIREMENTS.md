@@ -157,9 +157,11 @@ C++ модуль отвечает за:
 
 ### 5.1 Тип мультиплеера
 
-- Псевдо-реалтайм на тиках фиксированного интервала.
+- Псевдо-реалтайм на тиках фиксированного интервала (по умолчанию **4 тика/сек**, `FARM_WARS_TICK_SEC=0.25`).
+- Поля `*_sec` в мире и каталоге — **тики симуляции**, не wall-clock секунды (`shared/game_pacing.py`, DEC-014).
 - Сервер — авторитетный источник истины.
 - Клиенты отправляют команды (actions), не "готовое состояние".
+- Поддержка **2–4 игроков** в одном матче; автотест: `tools/test_multiplayer.py`, спека `docs/specs/gameplay/009`.
 
 ### 5.2 Join flow (реализовано)
 
@@ -168,6 +170,8 @@ C++ модуль отвечает за:
 - Хост: `POST /api/matches/start` → tick loop, начальный `StateSyncEvent`.
 - Игроки: `POST /api/matches/action` (`ClientActionEnvelope`).
 - Клиенты: poll `GET /api/matches/{match_id}/sync?since_tick=N`.
+- Гость в lobby: клиент poll до появления `world_state` после `start` (`client/main.py` `_poll_match_started`).
+- Действия на клетке в движке: `owner_player_id == player_id` (`WATER_PLANT`, harvest, feed; см. `server/009`).
 
 ### 5.3 Транспорт MVP (DEC-010)
 
@@ -185,6 +189,8 @@ C++ модуль отвечает за:
 
 - Сервер на хосте слушает все интерфейсы; в лог выводится LAN IPv4 (`server/network_util.py`).
 - Гость указывает IP хоста в клиенте. Требуется открытый порт в брандмауэре Windows.
+- Sign-off сценарий: `docs/specs/gameplay/001.SIGNOFF_DEMO_SCRIPT.md` (2 и 3 игрока).
+- Проверка MP: `docs/specs/gameplay/009.NIKITA.MULTIPLAYER_2PLUS_VERIFICATION.md`.
 
 ---
 
@@ -466,7 +472,7 @@ Data/API Contracts, Implementation Plan, Checkpoints, Acceptance Criteria, Test 
 | 5 | Client lobby/match + LAN IP | **готово** (`client/001`) |
 | 6 | Вертикальный срез sign-off | `gameplay/001` |
 | 7 | `PLACE_ON_TILE` + server enrich | **готово** (`002.SANYA` + `server/002`) |
-| 8 | События / PvP в геймплее | декларативно в БД, логика впереди |
+| 8 | События / PvP в геймплее | **базово готово** (события, саботаж MVP); расширение контента впереди |
 | 9 | Полный контент + UX | впереди |
 
 ---
@@ -477,7 +483,7 @@ MVP считается готовым, если:
 
 - на Windows запускается клиент и сервер,
 - доступен одиночный режим,
-- доступен мультиплеер `2+` с входом по коду,
+- доступен мультиплеер **2–4** с входом по коду (`test_multiplayer.py` зелёный),
 - можно сыграть полноценный матч до победы по целевому продукту,
 - работают растения, животные, заводы, рецепты, случайные события и PvP-шалости/защиты,
 - игровые данные загружаются из SQLite (с FK и нормализованной схемой),

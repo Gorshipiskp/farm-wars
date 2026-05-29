@@ -20,10 +20,14 @@ class GameServer:
         self.catalog = load_catalog(db_path)
         self.registry = MatchRegistry(self.catalog)
         self.simulate_tick, self.engine_name = get_simulate_tick()
-        interval = tick_interval_sec
-        if interval is None:
-            interval = float(os.environ.get("FARM_WARS_TICK_SEC", "1.0"))
+        if tick_interval_sec is None:
+            from shared.game_pacing import tick_interval_sec as default_interval
+
+            interval = default_interval()
+        else:
+            interval = tick_interval_sec
         self.tick_loop = TickLoop(self.registry, self.simulate_tick, interval)
+        log.info("Tick loop: %.2f s interval (%.1f ticks/sec)", interval, 1.0 / interval)
         log.info("Simulation backend: %s", self.engine_name)
         from server.match import SHOP_HANDLER_VERSION
 
@@ -70,3 +74,7 @@ class GameServer:
     def get_sync(self, match_id: str, since_tick: int = 0) -> dict | None:
         match = self.registry.get_match(match_id)
         return match.latest_sync(since_tick)
+
+    def get_roster(self, match_id: str) -> dict:
+        match = self.registry.get_match(match_id)
+        return match.roster_payload()

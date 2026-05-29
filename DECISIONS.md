@@ -211,6 +211,41 @@
     - плюс: движок не меняется для MVP магазина.
 - **Связанные ТЗ**: `docs/specs/gameplay/003.NIKITA.PLAYABLE_FARM_LOOP_V2.md`
 
+### DEC-014: Темп матча — 4 тика/сек, длительности в тиках
+
+- **Дата**: 2026-05-28
+- **Статус**: Accepted
+- **Контекст**: матчи казались слишком короткими; нужна предсказуемая связь БД ↔ реальное время.
+- **Решение**:
+    - Сервер: `FARM_WARS_TICK_SEC=0.25` (или `FARM_WARS_TICKS_PER_SEC=4`).
+    - Поля `growth_time_sec`, `production_time_sec` и т.п. в мире/каталоге — **номера тиков симуляции**, не секунды стенных часов.
+    - Хелперы: `shared/game_pacing.py` (`real_seconds_for_ticks`, `ANIMAL_HUNGER_LIMIT_TICKS`).
+- **Последствия**:
+    - плюс: длиннее и читаемее матчи без смены контрактов;
+    - минус: в документах явно писать «тики», чтобы не путать с секундами.
+- **Связанные ТЗ**: `db/001`, `gameplay/009`, README.
+
+### DEC-015: Действия на клетке — обязательная проверка `owner_player_id` в движке
+
+- **Дата**: 2026-05-28
+- **Статус**: Accepted
+- **Контекст**: `WATER_PLANT` не проверял владельца в C++; игрок мог полить чужую грядку.
+- **Решение**: в `simulate_tick` для `WATER_PLANT` — как для harvest: `owner == player_id`, иначе `CONTRACT_ERROR`. Stub зеркалит C++.
+- **Backlog**: `START_RECIPE` на чужой пекарне — отдельно (`server/009`).
+- **Связанные ТЗ**: `server/009`, `gameplay/009`, `GAME_CONTRACTS_V1.md`.
+
+### DEC-016: Сборка C++ на Windows — MSVC для python.org, gcc с оговорками
+
+- **Дата**: 2026-05-28
+- **Статус**: Accepted
+- **Контекст**: MinGW-сборка на официальном Python часто даёт ABI mismatch; `.pyd` блокируется запущенным server/client.
+- **Решение**:
+    - Рекомендация: `py tools/build_engine.py --toolchain msvc` + VS Build Tools.
+    - Альтернатива: gcc + Python из MSYS2 (тот же ABI).
+    - Перед сборкой останавливать процессы, держащие `engine_core*.pyd`.
+    - Fallback без сборки: `engine_core_stub` через `engine_adapter.py`.
+- **Связанные ТЗ**: `engine_cpp/001`, `gameplay/009`, `tools/build_engine.py`.
+
 ### DEC-009: В команде новички — ИИ объясняет все простым языком
 
 - **Дата**: 2026-05-27

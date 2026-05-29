@@ -215,6 +215,18 @@
 - оставлять код читаемым для новичков в команде,
 - явно указывать команды запуска и проверки.
 
+**Интеграционные тесты (без UI):** после изменений server/engine/MP — как минимум:
+
+```bash
+py tools/init_db.py --seed
+py tools/test_server_flow.py
+py tools/test_multiplayer.py
+py tools/test_vertical_slice.py
+```
+
+Мультиплеер 2–4: спека `docs/specs/gameplay/009.NIKITA.MULTIPLAYER_2PLUS_VERIFICATION.md`.  
+Перед `py tools/build_engine.py` на Windows — остановить `py -m server` и клиенты (блокировка `.pyd`).
+
 ИИ-агент не должен:
 
 - переписывать большие части проекта без запроса,
