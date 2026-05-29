@@ -1310,6 +1310,55 @@ def test_event_unknown():
     print("  [OK]")
 
 
+# ===== Тесты 006 — player_id в ошибках + владелец завода =====
+
+def test_error_has_player_id():
+    print("\n--- Test 11a: CONTRACT_ERROR contains player_id ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+    # PLACE_ON_TILE на чужую клетку
+    tick_input = {"contract_version": "v1", "tick_id": 1, "world_state": world, "actions": [{
+        "contract_version": "v1", "player_id": "p2",
+        "action_type": "PLACE_ON_TILE",
+        "payload": {"tile_id": "t1", "plant_id": "wheat", "initial_health": 100,
+                    "initial_water_level": 50},
+        "client_ts": 0
+    }]}
+    result = sim(tick_input)
+    errors = [e for e in result["events"] if e["event_type"] == "CONTRACT_ERROR"]
+    assert len(errors) >= 1
+    # player_id должен быть у ошибки
+    for err in errors:
+        pid = err["payload"].get("player_id")
+        if pid is not None:
+            assert pid == "p2", f"Expected p2, got {pid}"
+            print(f"  [OK] CONTRACT_ERROR has player_id={pid}")
+            return
+    assert False, "CONTRACT_ERROR should have player_id"
+
+
+def test_start_recipe_not_owner():
+    print("\n--- Test 11b: START_RECIPE on other's factory -> RECIPE_REJECTED ---")
+    sim = get_simulate()
+    world = load_fixture("world_state", "minimal_world.json")
+    # p2 пытается запустить рецепт на bakery_1 (принадлежит p1)
+    tick_input = {"contract_version": "v1", "tick_id": 1, "world_state": world, "actions": [{
+        "contract_version": "v1", "player_id": "p2",
+        "action_type": "START_RECIPE",
+        "payload": {"factory_id": "bakery_1", "recipe_id": "bread", "duration_sec": 30},
+        "client_ts": 0
+    }]}
+    result = sim(tick_input)
+    events = result["events"]
+    rejected = [e for e in events if e["event_type"] == "RECIPE_REJECTED"]
+    assert len(rejected) >= 1, f"Expected RECIPE_REJECTED, got {[e['event_type'] for e in events]}"
+    assert rejected[0]["payload"]["reason"] == "NOT_OWNER"
+    # Завод не должен был запуститься
+    factory = result["next_world_state"]["factories"][0]
+    assert factory["active_recipe_id"] is None, "Factory should NOT be active"
+    print("  [OK] RECIPE_REJECTED NOT_OWNER, factory idle")
+
+
 # ===== Сравнение stub vs C++ =====
 
 def _assert_stub_cpp_equal(cpp_sim, stub_sim, tick_input: dict, label: str) -> None:
@@ -1426,6 +1475,8 @@ def main():
     test_event_rain_water_caps_at_100()
     test_event_earthquake()
     test_event_unknown()
+    test_error_has_player_id()
+    test_start_recipe_not_owner()
     test_stub_vs_cpp()
 
     print("\n" + "=" * 60)

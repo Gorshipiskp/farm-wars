@@ -13,7 +13,8 @@
 py::dict make_error_event(int tick_id,
                           const std::string& error_code,
                           const std::string& message,
-                          const std::string& field_path = "") {
+                          const std::string& field_path = "",
+                          const std::string& player_id = "") {
     py::dict event;
     event["contract_version"] = "v1";
     event["event_type"] = "CONTRACT_ERROR";
@@ -26,6 +27,11 @@ py::dict make_error_event(int tick_id,
         payload["field_path"] = py::none();
     } else {
         payload["field_path"] = field_path;
+    }
+    if (player_id.empty()) {
+        payload["player_id"] = py::none();
+    } else {
+        payload["player_id"] = player_id;
     }
     event["payload"] = payload;
     return event;
@@ -56,8 +62,9 @@ bool has_field(py::dict d, const std::string& key) {
 
 // Удобный короткий псевдоним для добавления CONTRACT_ERROR в список
 void add_error(py::list& errors, int tick_id,
-               const std::string& code, const std::string& msg, const std::string& path) {
-    errors.append(make_error_event(tick_id, code, msg, path));
+               const std::string& code, const std::string& msg,
+               const std::string& path, const std::string& player_id = "") {
+    errors.append(make_error_event(tick_id, code, msg, path, player_id));
 }
 
 /*
@@ -200,26 +207,26 @@ py::list validate_tick_input(py::dict input) {
 }
 
 
-// ----- Поиск объектов в списках -----
+// ----- Поиск объектов в списках (индексы для гарантии in-place мутаций) -----
 
-py::dict find_tile(py::list tiles, const std::string& tile_id) {
-    for (auto& item : tiles) {
-        auto tile = item.cast<py::dict>();
+int find_tile_index(py::list tiles, const std::string& tile_id) {
+    for (size_t i = 0; i < tiles.size(); i++) {
+        auto tile = tiles[i].cast<py::dict>();
         if (tile["tile_id"].cast<std::string>() == tile_id) {
-            return tile;
+            return static_cast<int>(i);
         }
     }
-    throw std::runtime_error("Tile not found: " + tile_id);
+    return -1;
 }
 
-py::dict find_factory(py::list factories, const std::string& factory_id) {
-    for (auto& item : factories) {
-        auto factory = item.cast<py::dict>();
+int find_factory_index(py::list factories, const std::string& factory_id) {
+    for (size_t i = 0; i < factories.size(); i++) {
+        auto factory = factories[i].cast<py::dict>();
         if (factory["factory_id"].cast<std::string>() == factory_id) {
-            return factory;
+            return static_cast<int>(i);
         }
     }
-    throw std::runtime_error("Factory not found: " + factory_id);
+    return -1;
 }
 
 
@@ -285,13 +292,17 @@ py::dict simulate_tick(py::dict input) {
 
         if (action_type == "WATER_PLANT") {
             std::string tile_id = payload["tile_id"].cast<std::string>();
-            try {
-                py::dict tile = find_tile(tiles, tile_id);
+            int t_idx = find_tile_index(tiles, tile_id);
+            if (t_idx < 0) {
+                events.append(make_error_event(tick_id, "MISSING_FIELD",
+                    "Tile not found: " + tile_id, "", player_id));
+            } else {
+                py::dict tile = tiles[t_idx].cast<py::dict>();
                 std::string owner = tile["owner_player_id"].cast<std::string>();
                 if (owner != player_id) {
                     events.append(make_error_event(
                         tick_id, "INVALID_TYPE",
-                        "Tile not owned by " + player_id));
+                        "Tile not owned by " + player_id, "", player_id));
                 } else {
                     tile["water_level"] = 100;
 
@@ -300,31 +311,47 @@ py::dict simulate_tick(py::dict input) {
                     ev_payload["player_id"] = player_id;
                     events.append(make_game_event("PLANT_WATERED", tick_id, ev_payload));
                 }
-
-            } catch (const std::runtime_error& e) {
-                events.append(make_error_event(tick_id, "MISSING_FIELD", e.what()));
             }
 
         } else if (action_type == "START_RECIPE") {
             std::string factory_id = payload["factory_id"].cast<std::string>();
             std::string recipe_id = payload["recipe_id"].cast<std::string>();
             int duration_sec = payload["duration_sec"].cast<int>();
-            try {
-                py::dict factory = find_factory(factories, factory_id);
-                factory["active_recipe_id"] = recipe_id;
-                factory["remaining_time_sec"] = duration_sec;
-                if (payload.contains("output_product_id")) {
-                    factory["output_product_id"] = payload["output_product_id"];
+            int f_idx = find_factory_index(factories, factory_id);
+            if (f_idx < 0) {
+                events.append(make_error_event(tick_id, "MISSING_FIELD",
+                    "Factory not found: " + factory_id, "", player_id));
+            } else {
+                py::dict factory = factories[f_idx].cast<py::dict>();
+
+                // Проверка владельца завода
+                bool owner_ok = true;
+                if (factory.contains("owner_player_id")) {
+                    std::string fowner = factory["owner_player_id"].cast<std::string>();
+                    if (fowner != player_id) {
+                        py::dict p;
+                        p["player_id"] = player_id;
+                        p["factory_id"] = factory_id;
+                        p["recipe_id"] = recipe_id;
+                        p["reason"] = "NOT_OWNER";
+                        events.append(make_game_event("RECIPE_REJECTED", tick_id, p));
+                        owner_ok = false;
+                    }
                 }
 
-                py::dict ev_payload;
-                ev_payload["factory_id"] = factory_id;
-                ev_payload["recipe_id"] = recipe_id;
-                ev_payload["player_id"] = player_id;
-                events.append(make_game_event("RECIPE_STARTED", tick_id, ev_payload));
+                if (owner_ok) {
+                    factory["active_recipe_id"] = recipe_id;
+                    factory["remaining_time_sec"] = duration_sec;
+                    if (payload.contains("output_product_id")) {
+                        factory["output_product_id"] = payload["output_product_id"];
+                    }
 
-            } catch (const std::runtime_error& e) {
-                events.append(make_error_event(tick_id, "MISSING_FIELD", e.what()));
+                    py::dict ev_payload;
+                    ev_payload["factory_id"] = factory_id;
+                    ev_payload["recipe_id"] = recipe_id;
+                    ev_payload["player_id"] = player_id;
+                    events.append(make_game_event("RECIPE_STARTED", tick_id, ev_payload));
+                }
             }
 
         } else if (action_type == "PLACE_ON_TILE") {
@@ -337,27 +364,30 @@ py::dict simulate_tick(py::dict input) {
             int initial_health = payload["initial_health"].cast<int>();
             int initial_water = payload["initial_water_level"].cast<int>();
 
-            try {
-                // Найти клетку
-                py::dict tile = find_tile(tiles, tile_id);
+            int t_idx = find_tile_index(tiles, tile_id);
+            if (t_idx < 0) {
+                events.append(make_error_event(tick_id, "MISSING_FIELD",
+                    "Tile not found: " + tile_id, "", player_id));
+            } else {
+                py::dict tile = tiles[t_idx].cast<py::dict>();
 
                 // Проверить, что клетка принадлежит игроку
                 std::string owner = tile["owner_player_id"].cast<std::string>();
                 if (owner != player_id) {
                     events.append(make_error_event(tick_id, "INVALID_TYPE",
-                        "Tile " + tile_id + " not owned by " + player_id));
+                        "Tile " + tile_id + " not owned by " + player_id, "", player_id));
                 }
                 // Проверить, что клетка пустая
                 else if (!tile["occupant_type"].is_none() &&
                          tile["occupant_type"].cast<std::string>() != "EMPTY") {
                     events.append(make_error_event(tick_id, "INVALID_TYPE",
-                        "Tile already occupied: " + tile_id));
+                        "Tile already occupied: " + tile_id, "", player_id));
                 }
                 // Проверить, что зона PLANT
                 else if (tile["zone_type"].cast<std::string>() != "PLANT") {
                     std::string zone = tile["zone_type"].cast<std::string>();
                     events.append(make_error_event(tick_id, "INVALID_TYPE",
-                        "Tile zone is " + zone + ", expected PLANT"));
+                        "Tile zone is " + zone + ", expected PLANT", "", player_id));
                 }
                 // Проверить инвентарь и списать семечко
                 else {
@@ -380,7 +410,7 @@ py::dict simulate_tick(py::dict input) {
                             int amount = inv_item["amount"].cast<int>();
                             if (amount < 1) {
                                 events.append(make_error_event(tick_id, "MISSING_FIELD",
-                                    "No " + seed_product_id + " in inventory for player " + player_id));
+                                    "No " + seed_product_id + " in inventory for player " + player_id, "", player_id));
                                 inv_found = true;
                                 break;
                             }
@@ -433,14 +463,12 @@ py::dict simulate_tick(py::dict input) {
 
                     if (!player_found) {
                         events.append(make_error_event(tick_id, "MISSING_FIELD",
-                            "Player not found: " + player_id));
+                            "Player not found: " + player_id, "", player_id));
                     } else if (!inv_found) {
                         events.append(make_error_event(tick_id, "MISSING_FIELD",
-                            "No " + seed_product_id + " in inventory for player " + player_id));
+                            "No " + seed_product_id + " in inventory for player " + player_id, "", player_id));
                     }
                 }
-            } catch (const std::runtime_error& e) {
-                events.append(make_error_event(tick_id, "MISSING_FIELD", e.what()));
             }
 
         } else if (action_type == "BUY_PRODUCT") {
@@ -451,8 +479,15 @@ py::dict simulate_tick(py::dict input) {
 
         } else if (action_type == "FEED_ANIMAL") {
             std::string tile_id = payload["tile_id"].cast<std::string>();
-            try {
-                py::dict tile = find_tile(tiles, tile_id);
+            int t_idx = find_tile_index(tiles, tile_id);
+            if (t_idx < 0) {
+                py::dict p;
+                p["player_id"] = player_id;
+                p["tile_id"] = tile_id;
+                p["reason"] = "UNKNOWN_TILE";
+                events.append(make_game_event("FEED_FAILED", tick_id, p));
+            } else {
+                py::dict tile = tiles[t_idx].cast<py::dict>();
                 std::string owner = tile["owner_player_id"].cast<std::string>();
                 if (owner != player_id) {
                     py::dict p;
@@ -483,12 +518,6 @@ py::dict simulate_tick(py::dict input) {
                     }
                     events.append(make_game_event("ANIMAL_FED", tick_id, ev_payload));
                 }
-            } catch (const std::runtime_error& e) {
-                py::dict p;
-                p["player_id"] = player_id;
-                p["tile_id"] = tile_id;
-                p["reason"] = "UNKNOWN_TILE";
-                events.append(make_game_event("FEED_FAILED", tick_id, p));
             }
 
         } else if (action_type == "APPLY_SABOTAGE" || action_type == "USE_COUNTERMEASURE") {
@@ -555,7 +584,7 @@ py::dict simulate_tick(py::dict input) {
                 }
             } else {
                 events.append(make_error_event(tick_id, "INVALID_TYPE",
-                    "Unknown event_type: " + event_type));
+                    "Unknown event_type: " + event_type, "", player_id));
             }
 
             if (affected > 0 || event_type == "DROUGHT" || event_type == "RAIN" ||
@@ -571,8 +600,13 @@ py::dict simulate_tick(py::dict input) {
             std::string tile_id = payload["tile_id"].cast<std::string>();
             bool harvest_handled = false;
 
-            try {
-                py::dict tile = find_tile(tiles, tile_id);
+            int t_idx = find_tile_index(tiles, tile_id);
+            if (t_idx < 0) {
+                py::dict p;
+                p["player_id"] = player_id; p["tile_id"] = tile_id; p["reason"] = "UNKNOWN_TILE";
+                events.append(make_game_event("HARVEST_FAILED", tick_id, p));
+            } else {
+                py::dict tile = tiles[t_idx].cast<py::dict>();
 
                 // Проверить владельца
                 std::string owner = tile["owner_player_id"].cast<std::string>();
@@ -660,10 +694,6 @@ py::dict simulate_tick(py::dict input) {
                     ev_payload["amount"] = HARVEST_YIELD;
                     events.append(make_game_event("PLANT_HARVESTED", tick_id, ev_payload));
                 }
-            } catch (const std::runtime_error& e) {
-                py::dict p;
-                p["player_id"] = player_id; p["tile_id"] = tile_id; p["reason"] = "UNKNOWN_TILE";
-                events.append(make_game_event("HARVEST_FAILED", tick_id, p));
             }
         } else {
             events.append(make_error_event(
