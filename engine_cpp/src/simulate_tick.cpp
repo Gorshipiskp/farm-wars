@@ -340,17 +340,26 @@ py::dict simulate_tick(py::dict input) {
                 }
 
                 if (owner_ok) {
-                    factory["active_recipe_id"] = recipe_id;
-                    factory["remaining_time_sec"] = duration_sec;
-                    if (payload.contains("output_product_id")) {
-                        factory["output_product_id"] = payload["output_product_id"];
-                    }
+                    if (!factory["active_recipe_id"].is_none()) {
+                        py::dict p;
+                        p["player_id"] = player_id;
+                        p["factory_id"] = factory_id;
+                        p["recipe_id"] = recipe_id;
+                        p["reason"] = "FACTORY_BUSY";
+                        events.append(make_game_event("RECIPE_REJECTED", tick_id, p));
+                    } else {
+                        factory["active_recipe_id"] = recipe_id;
+                        factory["remaining_time_sec"] = duration_sec;
+                        if (payload.contains("output_product_id")) {
+                            factory["output_product_id"] = payload["output_product_id"];
+                        }
 
-                    py::dict ev_payload;
-                    ev_payload["factory_id"] = factory_id;
-                    ev_payload["recipe_id"] = recipe_id;
-                    ev_payload["player_id"] = player_id;
-                    events.append(make_game_event("RECIPE_STARTED", tick_id, ev_payload));
+                        py::dict ev_payload;
+                        ev_payload["factory_id"] = factory_id;
+                        ev_payload["recipe_id"] = recipe_id;
+                        ev_payload["player_id"] = player_id;
+                        events.append(make_game_event("RECIPE_STARTED", tick_id, ev_payload));
+                    }
                 }
             }
 
@@ -705,7 +714,7 @@ py::dict simulate_tick(py::dict input) {
     // Шаг 5.5: пассивная фаза — испарение воды со всех грядок, рост/смерть растений
     {
         const int HEALTH_DECAY_PER_TICK = 10;
-        const int DEFAULT_EVAPORATION = 0;  // пустые грядки без испарения (урожай — water_decay из БД)
+        const int DEFAULT_EVAPORATION = 1;  // если water_decay_per_tick не задан (контракт v1)
 
         py::dict map = next_world_state["map"].cast<py::dict>();
         py::list all_tiles = map["tiles"].cast<py::list>();
@@ -789,7 +798,8 @@ py::dict simulate_tick(py::dict input) {
 
     // Шаг 5.55: пассивная фаза животных
     {
-        const int ANIMAL_HUNGER_LIMIT = 400;
+        const int ANIMAL_HUNGER_LIMIT = 200;
+        const int ANIMAL_PRODUCTION_HUNGER_TICKS = 40;
         py::list all_players = next_world_state["players"].cast<py::list>();
         py::dict map = next_world_state["map"].cast<py::dict>();
         py::list all_tiles = map["tiles"].cast<py::list>();
@@ -808,6 +818,7 @@ py::dict simulate_tick(py::dict input) {
             hunger += 1;
             tile["hunger_ticks"] = hunger;
             if (hunger > ANIMAL_HUNGER_LIMIT) continue;
+            if (hunger >= ANIMAL_PRODUCTION_HUNGER_TICKS) continue;
 
             int interval = 12;
             if (tile.contains("production_interval_sec") &&

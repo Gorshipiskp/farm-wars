@@ -101,7 +101,8 @@ flowchart LR
 
 | Слой | Технология | Кто ведёт |
 |------|------------|-----------|
-| Клиент, UI | Python + pygame | NIKITA |
+| Клиент (основной) | **Svelte 5 + TS + Vite** (`web/`) | NIKITA |
+| Клиент (legacy) | Python + pygame (`client/`) | NIKITA |
 | Сервер, API, матч, БД | Python + SQLite | NIKITA |
 | Симуляция тика | C++ (`pybind11`) + зеркальный stub | SANYA |
 | Контракты v1 | `docs/contracts/GAME_CONTRACTS_V1.md` | NIKITA_LEAD + команда |
@@ -120,7 +121,8 @@ flowchart LR
 
 ```
 farm-wars/
-├── client/              # pygame: лобби, матч, UI, опрос sync
+├── web/                 # браузерный клиент (Svelte + Vite) — основной UI
+├── client/              # pygame (legacy до parity)
 ├── server/              # HTTP API, матчи, enricher, магазин, события
 ├── db/                  # schema.sql, seed_minimal.sql, загрузчик каталога
 ├── engine_cpp/          # C++ simulate_tick + сборка .pyd
@@ -142,7 +144,8 @@ farm-wars/
 | Обогащение посадки/рецепта | `server/action_enricher.py` |
 | Магазин / продажа | `server/shop.py`, `server/sell.py` |
 | Создание мира | `server/world_factory.py` |
-| Клиент | `client/main.py`, `client/ui.py` |
+| Веб-клиент | `web/src/App.svelte`, `web/src/lib/actions/gameActions.ts` |
+| Клиент pygame | `client/main.py`, `client/ui.py` |
 | Движок | `engine_cpp/src/simulate_tick.cpp`, `engine_core_stub/stub.py` |
 | Контент | `db/seed_minimal.sql` |
 
@@ -192,7 +195,22 @@ py -m server
 
 По умолчанию: `http://0.0.0.0:8765`. В логе будет LAN-IP для гостей.
 
-### 4. Клиент
+### 4. Клиент (браузер — основной, в разработке)
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+Откройте http://localhost:5173 — API в dev проксируется на `:8765` (сервер должен быть запущен).
+
+ТЗ миграции: [`docs/specs/client/002.NIKITA.WEB_CLIENT_SVELTE_VITE.md`](docs/specs/client/002.NIKITA.WEB_CLIENT_SVELTE_VITE.md)  
+**Документация фронтенда:** [`docs/frontend/README.md`](docs/frontend/README.md) (архитектура, структура, sync, UI, dev)
+
+LAN без proxy: создайте `web/.env.local` с `VITE_API_BASE=http://192.168.x.x:8765` (нужен CORS на сервере — уже включён).
+
+### 4b. Клиент pygame (legacy, до parity)
 
 ```bash
 py -m client
@@ -318,7 +336,8 @@ py tools/test_multiplayer.py
 | [`docs/contracts/GAME_CONTRACTS_V1.md`](docs/contracts/GAME_CONTRACTS_V1.md) | протокол действий и событий |
 | [`TASK_STATUS.md`](TASK_STATUS.md) | статусы ТЗ и team checkpoints |
 | [`DECISIONS.md`](DECISIONS.md) | почему приняли те или иные решения |
-| [`GUIDE_FOR_AI.md`](GUIDE_FOR_AI.md) | как ставить задачи через ИИ-агента |
+| [`AGENTS.md`](AGENTS.md) | правила для ИИ-агентов |
+| [`docs/frontend/README.md`](docs/frontend/README.md) | веб-клиент: архитектура, модули, sync, разработка |
 | [`docs/specs/gameplay/010.TEAM.WORK_SUMMARY_AND_HANDOFF.md`](docs/specs/gameplay/010.TEAM.WORK_SUMMARY_AND_HANDOFF.md) | что уже сделано и handoff |
 
 **ТЗ по ролям (актуальный backlog):**

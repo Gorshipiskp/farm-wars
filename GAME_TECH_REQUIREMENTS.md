@@ -14,15 +14,17 @@ task specs) через ИИ-агента.
 Операционный контур проекта обязательно дополняется:
 
 - `DECISIONS.md` — фиксация ключевых технических/процессных решений,
-- `TASK_STATUS.md` — единая доска статусов ТЗ, checkpoints и блокеров.
+- `TASK_STATUS.md` — единая доска статусов ТЗ, checkpoints и блокеров,
+- `AGENTS.md` — правила работы ИИ-агентов в репозитории,
+- `docs/frontend/` — подробная документация веб-клиента (`web/`).
 
 ---
 
 ## 2) Обязательные ограничения и договоренности
 
-- Платформа: только Windows.
-- Формат: desktop-приложение, без браузера.
-- Рендер и UI: Python (`pygame`).
+- Платформа: только Windows (сервер и сборка; браузерный клиент — целевой UI).
+- Формат: desktop и/или браузер; **основной клиент в разработке** — `web/` (Svelte + Vite).
+- Рендер и UI: **браузер** (`web/`) + legacy Python (`pygame`, `client/`) до parity.
 - Ядро игрового цикла (game loop): Python.
 - Мультиплеер: псевдо-реалтайм, `join by code`, поддержка `2+` игроков.
 - Обязателен одиночный режим.
@@ -93,9 +95,10 @@ task specs) через ИИ-агента.
     - нативный модуль симуляции (`engine_core`),
     - детерминированные расчеты сущностей и эффектов,
     - API модуля для Python.
-- `NIKITA` (Python):
-    - клиент (`pygame`),
-    - мультиплеерный клиентский слой,
+- `NIKITA` (Python + web):
+    - веб-клиент (`web/`) — основной UI,
+    - legacy клиент (`pygame`),
+    - мультиплеерный клиентский слой (HTTP + sync),
     - серверная логика матча и загрузки данных из БД,
     - SQLite схема и сидирование контента.
 
@@ -103,7 +106,8 @@ task specs) через ИИ-агента.
 
 | Модуль | Owner | Ключевые артефакты |
 |--------|-------|-------------------|
-| `client/` | `NIKITA` | `main.py`, `net.py`, `sync_poller.py`, `requirements.txt` |
+| `web/` | `NIKITA` | `src/lib/api`, `actions/gameActions.ts`, `sync/`, `components/` — см. [`docs/frontend/README.md`](docs/frontend/README.md) |
+| `client/` | `NIKITA` | `main.py`, `net.py`, `sync_poller.py` (legacy) |
 | `server/` | `NIKITA` | `main.py`, `http_api.py`, `game_server.py`, `match.py`, `tick_loop.py` |
 | `db/` | `NIKITA` | `schema.sql`, `seed_minimal.sql`, `loader.py`, `pricing.py` |
 | `shared/` | `NIKITA_LEAD` | `contracts.py` |
@@ -218,7 +222,7 @@ C++ модуль отвечает за:
 
 - если `price_override` задан, используется он;
 - если `price_override` = `NULL`, применяется формула по умолчанию (DEC-011):
-    - `sum(base_sell_price × amount) + production_time_sec × buildings.time_coef`,
+    - `round((sum(base_sell_price × amount) + production_time_sec × buildings.time_coef) × 1.4)` (~+40% к базе),
     - где `time_coef` берётся из завода рецепта (`recipes.building_type` → `buildings`).
 
 Реализация: `db/pricing.py`, `calculate_recipe_price`.

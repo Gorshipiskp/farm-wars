@@ -8,41 +8,47 @@
       "display_name": "TestPlayer",
       "money_bestiki": 100,
       "inventory": [
-        {"product_id": "wheat_seed", "amount": 3},
-        {"product_id": "corn_seed", "amount": 1}
+        {
+          "product_id": "wheat_seed",
+          "amount": 3
+        },
+        {
+          "product_id": "corn_seed",
+          "amount": 1
+        }
       ],
       "status_effects": []
     }
   ],
   "map": {
     "width": 4,
-    "height": 2,
+    "height": 5,
     "tiles": [
       {
         "tile_id": "t1",
         "zone_type": "PLANT",
         "owner_player_id": "p1",
         "occupant_type": "PLANT",
-        "occupant_id": "wheat",
         "health": 100,
         "water_level": 30,
+        "flags": [],
+        "occupant_id": "wheat",
         "growth_elapsed_sec": 0,
         "growth_time_sec": 5,
-        "water_decay_per_tick": 2,
-        "flags": []
+        "water_decay_per_tick": 2
       },
       {
         "tile_id": "t2",
         "zone_type": "PLANT",
         "owner_player_id": "p1",
         "occupant_type": "PLANT",
-        "occupant_id": "corn",
         "health": 100,
         "water_level": 10,
+        "flags": [],
+        "occupant_id": "corn",
         "growth_elapsed_sec": 0,
         "growth_time_sec": 5,
-        "water_decay_per_tick": 2,
-        "flags": []
+        "water_decay_per_tick": 2
       },
       {
         "tile_id": "t3",
@@ -82,6 +88,60 @@
       },
       {
         "tile_id": "t7",
+        "zone_type": "PLANT",
+        "owner_player_id": "p1",
+        "occupant_type": "EMPTY",
+        "health": null,
+        "water_level": 40,
+        "flags": []
+      },
+      {
+        "tile_id": "t8",
+        "zone_type": "PLANT",
+        "owner_player_id": "p1",
+        "occupant_type": "EMPTY",
+        "health": null,
+        "water_level": 40,
+        "flags": []
+      },
+      {
+        "tile_id": "t9",
+        "zone_type": "PLANT",
+        "owner_player_id": "p1",
+        "occupant_type": "EMPTY",
+        "health": null,
+        "water_level": 40,
+        "flags": []
+      },
+      {
+        "tile_id": "t10",
+        "zone_type": "PLANT",
+        "owner_player_id": "p1",
+        "occupant_type": "EMPTY",
+        "health": null,
+        "water_level": 40,
+        "flags": []
+      },
+      {
+        "tile_id": "t11",
+        "zone_type": "PLANT",
+        "owner_player_id": "p1",
+        "occupant_type": "EMPTY",
+        "health": null,
+        "water_level": 40,
+        "flags": []
+      },
+      {
+        "tile_id": "t12",
+        "zone_type": "PLANT",
+        "owner_player_id": "p1",
+        "occupant_type": "EMPTY",
+        "health": null,
+        "water_level": 40,
+        "flags": []
+      },
+      {
+        "tile_id": "t13",
         "zone_type": "ANIMAL",
         "owner_player_id": "p1",
         "occupant_type": "EMPTY",
@@ -90,7 +150,61 @@
         "flags": []
       },
       {
-        "tile_id": "t8",
+        "tile_id": "t14",
+        "zone_type": "ANIMAL",
+        "owner_player_id": "p1",
+        "occupant_type": "EMPTY",
+        "health": null,
+        "water_level": 0,
+        "flags": []
+      },
+      {
+        "tile_id": "t15",
+        "zone_type": "ANIMAL",
+        "owner_player_id": "p1",
+        "occupant_type": "EMPTY",
+        "health": null,
+        "water_level": 0,
+        "flags": []
+      },
+      {
+        "tile_id": "t16",
+        "zone_type": "ANIMAL",
+        "owner_player_id": "p1",
+        "occupant_type": "EMPTY",
+        "health": null,
+        "water_level": 0,
+        "flags": []
+      },
+      {
+        "tile_id": "t17",
+        "zone_type": "ANIMAL",
+        "owner_player_id": "p1",
+        "occupant_type": "EMPTY",
+        "health": null,
+        "water_level": 0,
+        "flags": []
+      },
+      {
+        "tile_id": "t18",
+        "zone_type": "ANIMAL",
+        "owner_player_id": "p1",
+        "occupant_type": "EMPTY",
+        "health": null,
+        "water_level": 0,
+        "flags": []
+      },
+      {
+        "tile_id": "t19",
+        "zone_type": "ANIMAL",
+        "owner_player_id": "p1",
+        "occupant_type": "EMPTY",
+        "health": null,
+        "water_level": 0,
+        "flags": []
+      },
+      {
+        "tile_id": "t20",
         "zone_type": "ANIMAL",
         "owner_player_id": "p1",
         "occupant_type": "EMPTY",

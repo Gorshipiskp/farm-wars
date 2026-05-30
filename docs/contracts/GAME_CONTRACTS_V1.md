@@ -139,7 +139,7 @@
 ### Пассивная фаза тика
 
 Каждый тик движок выполняет после обработки действий:
-- **Испарение**: все клетки с `water_level > 0` → `water_level -= water_decay_per_tick` (или 1 если поле отсутствует)
+- **Испарение**: все клетки с `water_level > 0` → `water_level -= water_decay_per_tick` (если поле отсутствует на клетке — **1** за тик; при посадке с сервера минимум **1**)
 - **Рост**: клетки с `occupant_type == "PLANT"` и `water_level > 0` → `growth_elapsed_sec += 1`
 - **Засыхание**: клетки с `occupant_type == "PLANT"` и `water_level == 0` → `health -= 10`
 - **Смерть**: `health <= 0` → клетка очищается, событие `PLANT_DIED` (`reason: "DEHYDRATED"`), `water_level` сохраняется

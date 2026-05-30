@@ -14,7 +14,7 @@ log = logging.getLogger("farm_wars.server.shop")
 
 
 def shop_buyable_product_ids(catalog: GameContentCatalog) -> frozenset[str]:
-    """Seeds for planting plus flour/feed; crops are not sold in the shop."""
+    """Seeds for planting plus flour; crops are not sold in the shop."""
     ids = set(SHOP_EXTRA_PRODUCT_IDS)
     for plant in catalog.plants.values():
         ids.add(plant.seed_product_id)

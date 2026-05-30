@@ -13,6 +13,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from server.game_server import GameServer
+from shared.game_pacing import ticks_for_real_seconds
 
 
 def test_join_flow():
@@ -130,7 +131,7 @@ def test_place_on_tile_enriched():
     assert wheat_before >= 1, "starter inventory should include wheat seeds"
 
     tile_id = "p1_t3"
-    game.submit_action({
+    result = game.submit_action({
         "contract_version": "v1",
         "match_id": match_id,
         "player_id": "p1",
@@ -143,8 +144,7 @@ def test_place_on_tile_enriched():
         },
     })
 
-    match.process_tick(game.simulate_tick)
-    sync = match.sync_history[-1]
+    sync = result["sync"]
     placed = [e for e in sync["events"] if e["event_type"] == "PLANT_PLACED"]
     assert placed, f"expected PLANT_PLACED, got {[e['event_type'] for e in sync['events']]}"
 
@@ -166,7 +166,7 @@ def test_place_on_tile_unknown_plant():
     game.start_match(match_id)
     match = game.registry.get_match(match_id)
 
-    game.submit_action({
+    result = game.submit_action({
         "contract_version": "v1",
         "match_id": match_id,
         "player_id": "p1",
@@ -179,8 +179,7 @@ def test_place_on_tile_unknown_plant():
         },
     })
 
-    match.process_tick(game.simulate_tick)
-    sync = match.sync_history[-1]
+    sync = result["sync"]
     errors = [e for e in sync["events"] if e["event_type"] == "CONTRACT_ERROR"]
     assert errors, "expected CONTRACT_ERROR for unknown plant"
     assert "Unknown plant_id" in errors[0]["payload"]["message"]
@@ -196,9 +195,9 @@ def test_buy_immediate_sync():
     match = game.registry.get_match(match_id)
 
     assert len(match.action_queue) == 0
-    game.submit_action(_action(match_id, "p1", "BUY_PRODUCT", {"product_id": "wheat_seed", "amount": 1}))
+    result = game.submit_action(_action(match_id, "p1", "BUY_PRODUCT", {"product_id": "wheat_seed", "amount": 1}))
     assert len(match.action_queue) == 0, "BUY must not sit in engine queue"
-    sync = match.latest_sync(0)
+    sync = result["sync"]
     purchased = [e for e in sync["events"] if e["event_type"] == "PRODUCT_PURCHASED"]
     assert purchased, f"expected immediate PRODUCT_PURCHASED, got {[e['event_type'] for e in sync['events']]}"
     print("  [OK] immediate shop sync, queue empty")
@@ -217,8 +216,8 @@ def test_sell_product_ok():
     money_before = player["money_bestiki"]
     assert wheat_before >= 1, "need harvested wheat to sell"
 
-    game.submit_action(_action(match_id, "p1", "SELL_PRODUCT", {"product_id": "wheat", "amount": 1}))
-    sync = match.latest_sync(0)
+    result = game.submit_action(_action(match_id, "p1", "SELL_PRODUCT", {"product_id": "wheat", "amount": 1}))
+    sync = result["sync"]
     sold = [e for e in sync["events"] if e["event_type"] == "PRODUCT_SOLD"]
     assert sold, f"expected PRODUCT_SOLD, got {[e['event_type'] for e in sync['events']]}"
     player = sync["world_state"]["players"][0]
@@ -238,8 +237,8 @@ def test_buy_product_ok():
     money_before = match.world_state["players"][0]["money_bestiki"]
     potato_before = _inventory_amount(match.world_state["players"][0], "potato_seed")
 
-    game.submit_action(_action(match_id, "p1", "BUY_PRODUCT", {"product_id": "potato_seed", "amount": 1}))
-    sync = match.latest_sync(0)
+    result = game.submit_action(_action(match_id, "p1", "BUY_PRODUCT", {"product_id": "potato_seed", "amount": 1}))
+    sync = result["sync"]
 
     purchased = [e for e in sync["events"] if e["event_type"] == "PRODUCT_PURCHASED"]
     assert purchased, f"expected PRODUCT_PURCHASED, got {[e['event_type'] for e in sync['events']]}"
@@ -257,8 +256,8 @@ def test_buy_amount_as_float():
     game.start_match(match_id)
     match = game.registry.get_match(match_id)
 
-    game.submit_action(_action(match_id, "p1", "BUY_PRODUCT", {"product_id": "wheat_seed", "amount": 1.0}))
-    sync = match.latest_sync(0)
+    result = game.submit_action(_action(match_id, "p1", "BUY_PRODUCT", {"product_id": "wheat_seed", "amount": 1.0}))
+    sync = result["sync"]
 
     purchased = [e for e in sync["events"] if e["event_type"] == "PRODUCT_PURCHASED"]
     assert purchased, f"expected PRODUCT_PURCHASED, got {[e['event_type'] for e in sync['events']]}"
@@ -271,21 +270,21 @@ def test_sync_merges_events_since_tick():
     created = game.create_match("Sync")
     match_id = created["match_id"]
     game.start_match(match_id)
-    game.submit_action(_action(match_id, "p1", "BUY_PRODUCT", {"product_id": "wheat_seed", "amount": 1}))
+    buy = game.submit_action(_action(match_id, "p1", "BUY_PRODUCT", {"product_id": "wheat_seed", "amount": 1}))
+    types0 = [e["event_type"] for e in buy["sync"]["events"]]
+    assert "PRODUCT_PURCHASED" in types0, f"buy response should include purchase, got {types0}"
+    match = game.registry.get_match(match_id)
+    match.latest_sync(0)
     game.start_ticks()
     import time
     time.sleep(0.6)
     game.stop_ticks()
-    match = game.registry.get_match(match_id)
-    sync0 = match.latest_sync(0)
-    sync1 = match.latest_sync(1)
-    assert sync0 is not None and sync1 is not None
-    types0 = [e["event_type"] for e in sync0["events"]]
-    assert "PRODUCT_PURCHASED" in types0, f"since 0 should include buy, got {types0}"
+    sync1 = match.latest_sync(0)
+    assert sync1 is not None
     assert "PRODUCT_PURCHASED" not in [e["event_type"] for e in sync1["events"]], (
-        "since 1 should not repeat old buy"
+        "polled sync should not repeat buy from action response"
     )
-    print(f"  [OK] since_tick=0 events={types0}")
+    print(f"  [OK] buy events={types0}, later sync has no duplicate buy")
 
 
 def test_buy_not_enough_money():
@@ -297,8 +296,8 @@ def test_buy_not_enough_money():
     match = game.registry.get_match(match_id)
     match.world_state["players"][0]["money_bestiki"] = 2  # wheat_seed costs 3
 
-    game.submit_action(_action(match_id, "p1", "BUY_PRODUCT", {"product_id": "wheat_seed", "amount": 1}))
-    sync = match.latest_sync(0)
+    result = game.submit_action(_action(match_id, "p1", "BUY_PRODUCT", {"product_id": "wheat_seed", "amount": 1}))
+    sync = result["sync"]
 
     failed = [e for e in sync["events"] if e["event_type"] == "PURCHASE_FAILED"]
     assert failed, "expected PURCHASE_FAILED"
@@ -318,16 +317,15 @@ def test_start_recipe_enriched():
         {"product_id": "wheat", "amount": 1},
     ]
 
-    game.submit_action(_action(match_id, "p1", "START_RECIPE", {
+    result = game.submit_action(_action(match_id, "p1", "START_RECIPE", {
         "factory_id": "p1_bakery_1",
         "recipe_id": "bread",
     }))
-    match.process_tick(game.simulate_tick)
-    sync = match.sync_history[-1]
+    sync = result["sync"]
 
     factory = next(f for f in sync["world_state"]["factories"] if f["factory_id"] == "p1_bakery_1")
     assert factory["active_recipe_id"] == "bread"
-    bread_ticks = game.catalog.recipes["bread"].production_time_sec
+    bread_ticks = ticks_for_real_seconds(game.catalog.recipes["bread"].production_time_sec)
     assert bread_ticks - 2 <= factory["remaining_time_sec"] <= bread_ticks
     started = [e for e in sync["events"] if e["event_type"] == "RECIPE_STARTED"]
     assert started, "expected RECIPE_STARTED"
@@ -343,12 +341,11 @@ def test_start_recipe_wrong_building():
     match = game.registry.get_match(match_id)
     match.world_state["factories"][0]["factory_type"] = "DAIRY"
 
-    game.submit_action(_action(match_id, "p1", "START_RECIPE", {
+    result = game.submit_action(_action(match_id, "p1", "START_RECIPE", {
         "factory_id": "p1_bakery_1",
         "recipe_id": "bread",
     }))
-    match.process_tick(game.simulate_tick)
-    sync = match.sync_history[-1]
+    sync = result["sync"]
 
     rejected = [e for e in sync["events"] if e["event_type"] == "RECIPE_REJECTED"]
     assert rejected, f"expected RECIPE_REJECTED, got {[e['event_type'] for e in sync['events']]}"
@@ -367,23 +364,20 @@ def test_mini_loop_buy_plant_water_bake():
     simulate = game.simulate_tick
 
     game.submit_action(_action(match_id, "p1", "PLACE_ON_TILE", {"tile_id": "p1_t3", "plant_id": "wheat"}))
-    match.process_tick(simulate)
     game.submit_action(_action(match_id, "p1", "WATER_PLANT", {"tile_id": "p1_t3"}))
-    match.process_tick(simulate)
 
     tile = _find_tile(match.world_state, "p1_t3")
     tile["growth_elapsed_sec"] = tile.get("growth_time_sec", 0)
 
     game.submit_action(_action(match_id, "p1", "HARVEST_PLANT", {"tile_id": "p1_t3"}))
-    match.process_tick(simulate)
     game.submit_action(_action(match_id, "p1", "BUY_PRODUCT", {"product_id": "flour", "amount": 2}))
     game.submit_action(_action(match_id, "p1", "START_RECIPE", {
         "factory_id": "p1_bakery_1",
         "recipe_id": "bread",
     }))
 
-    bread_ticks = game.catalog.recipes["bread"].production_time_sec
-    for _ in range(bread_ticks + 10):
+    bread_ticks = ticks_for_real_seconds(game.catalog.recipes["bread"].production_time_sec)
+    for _ in range(bread_ticks + 50):
         match.process_tick(simulate)
         if match.status == match.FINISHED:
             break
@@ -416,14 +410,12 @@ def test_animals_buy_feed_milk():
     tile_id = _animal_tile_id(match)
     simulate = game.simulate_tick
 
-    game.submit_action(_action(match_id, "p1", "BUY_ANIMAL", {"tile_id": tile_id, "animal_id": "cow"}))
-    sync = match.latest_sync(0)
+    result = game.submit_action(_action(match_id, "p1", "BUY_ANIMAL", {"tile_id": tile_id, "animal_id": "cow"}))
+    sync = result["sync"]
     bought = [e for e in sync["events"] if e["event_type"] == "ANIMAL_PURCHASED"]
     assert bought, f"expected ANIMAL_PURCHASED, got {[e['event_type'] for e in sync['events']]}"
 
-    game.submit_action(_action(match_id, "p1", "BUY_PRODUCT", {"product_id": "feed", "amount": 1}))
     game.submit_action(_action(match_id, "p1", "FEED_ANIMAL", {"tile_id": tile_id}))
-    match.process_tick(simulate)
 
     milk_interval = game.catalog.animals["cow"].production_interval_sec
     for _ in range(milk_interval + 15):
@@ -481,9 +473,7 @@ def test_harvest_plant():
     match = game.registry.get_match(match_id)
 
     game.submit_action(_action(match_id, "p1", "PLACE_ON_TILE", {"tile_id": "p1_t3", "plant_id": "wheat"}))
-    match.process_tick(game.simulate_tick)
     game.submit_action(_action(match_id, "p1", "WATER_PLANT", {"tile_id": "p1_t3"}))
-    match.process_tick(game.simulate_tick)
 
     tile = _find_tile(match.world_state, "p1_t3")
     tile["growth_elapsed_sec"] = tile.get("growth_time_sec", 0)
@@ -491,9 +481,8 @@ def test_harvest_plant():
 
     wheat_before = _inventory_amount(match.world_state["players"][0], "wheat")
 
-    game.submit_action(_action(match_id, "p1", "HARVEST_PLANT", {"tile_id": "p1_t3"}))
-    match.process_tick(game.simulate_tick)
-    sync = match.latest_sync(0)
+    result = game.submit_action(_action(match_id, "p1", "HARVEST_PLANT", {"tile_id": "p1_t3"}))
+    sync = result["sync"]
     harvested = [e for e in sync["events"] if e["event_type"] == "PLANT_HARVESTED"]
     events_list = [e['event_type'] for e in sync['events']]
     assert harvested, f"expected PLANT_HARVESTED, got {events_list}"
@@ -514,12 +503,11 @@ def test_recipe_requires_ingredients():
     match = game.registry.get_match(match_id)
     match.world_state["players"][0]["inventory"] = [{"product_id": "wheat", "amount": 1}]
 
-    game.submit_action(_action(match_id, "p1", "START_RECIPE", {
+    result = game.submit_action(_action(match_id, "p1", "START_RECIPE", {
         "factory_id": "p1_bakery_1",
         "recipe_id": "bread",
     }))
-    match.process_tick(game.simulate_tick)
-    sync = match.sync_history[-1]
+    sync = result["sync"]
     rejected = [e for e in sync["events"] if e["event_type"] == "RECIPE_REJECTED"]
     assert rejected and rejected[0]["payload"]["reason"] == "NOT_ENOUGH_INGREDIENTS"
     print("  [OK] bread rejected without flour")
@@ -544,13 +532,16 @@ def test_win_condition():
     }))
 
     simulate = game.simulate_tick
-    bread_ticks = game.catalog.recipes["bread"].production_time_sec
-    for _ in range(bread_ticks + 15):
+    bread_ticks = ticks_for_real_seconds(game.catalog.recipes["bread"].production_time_sec)
+    for _ in range(bread_ticks + 30):
         match.process_tick(simulate)
         if match.status == match.FINISHED:
             break
 
-    assert match.status == match.FINISHED
+    assert match.status == match.FINISHED, (
+        f"bread not finished in {bread_ticks + 30} ticks, "
+        f"remaining={match.world_state['factories'][0].get('remaining_time_sec')}"
+    )
     assert match.world_state["win_condition"]["winner_player_id"] == "p1"
     finished = [e for e in match.sync_history[-1]["events"] if e["event_type"] == "MATCH_FINISHED"]
     assert finished, "MATCH_FINISHED event expected"

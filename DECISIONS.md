@@ -192,7 +192,7 @@
 - **Статус**: Accepted
 - **Контекст**: в `GAME_TECH_REQUIREMENTS` цена зависит от времени производства; нужно уточнить, где хранить коэффициент.
 - **Решение**: `buildings.time_coef` per `building_type`; формула при `price_override IS NULL`:
-  `sum(ingredient.base_sell_price × amount) + production_time_sec × buildings.time_coef`.
+  `round((sum(ingredient.base_sell_price × amount) + production_time_sec × buildings.time_coef) × 1.4)` (`db/pricing.RECIPE_PRICE_MARKUP`).
 - **Альтернативы**: один глобальный `time_coef`; коэффициент в каждом рецепте.
 - **Последствия**:
     - плюс: разные заводы балансируются независимо;

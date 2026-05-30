@@ -8,7 +8,7 @@ Run from repo root:
 Environment:
     FARM_WARS_HOST      — bind address (default 0.0.0.0 = LAN + localhost)
     FARM_WARS_PORT      — HTTP port (default 8765)
-    FARM_WARS_TICK_SEC  — tick interval seconds (default 0.25 = 4 ticks/sec)
+    FARM_WARS_TICK_SEC  — tick interval seconds (default 1/3 ≈ 3 ticks/sec)
     FARM_WARS_DB_PATH   — SQLite path
     FARM_WARS_WIN_PRODUCT — win target (default bread)
     FARM_WARS_DEV       — if 1, win target cake

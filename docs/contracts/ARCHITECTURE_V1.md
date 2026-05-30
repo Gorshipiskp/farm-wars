@@ -24,12 +24,19 @@
 
 ## 3) Модули и владельцы
 
-### `client/` (owner: `NIKITA`)
+### `web/` (owner: `NIKITA`) — основной клиент (в разработке)
 
-- pygame UI (lobby/match/HUD),
-- обработка input игрока,
-- отправка команд на сервер,
-- рендер состояния, полученного от сервера.
+- Svelte SPA (lobby/match/HUD),
+- обработка input, DnD, hotkeys,
+- HTTP API + poll sync + optimistic UI,
+- рендер `world_state` с сервера.
+
+Документация: [`docs/frontend/README.md`](../frontend/README.md).
+
+### `client/` (owner: `NIKITA`) — legacy
+
+- pygame UI (reference до parity с `web/`),
+- те же контракты `PlayerAction` / `SyncResponse`, что и веб-клиент.
 
 ### `server/` (owner: `NIKITA`)
 
@@ -120,7 +127,8 @@ Checkpoint `Module Boundaries Approved` считается пройденным,
 
 | Модуль | Entry / API | Контракты |
 |--------|-------------|-----------|
-| `client/` | `py -m client` → HTTP к серверу | `ClientActionEnvelope`, poll `StateSyncEvent` |
+| `web/` | `npm run dev` → proxy `/api` → сервер | те же HTTP endpoints, `docs/frontend/` |
+| `client/` | `py -m client` → HTTP к серверу | `ClientActionEnvelope`, poll sync (legacy) |
 | `server/` | `py -m server` → `server/http_api.py` | create/join/start/action/sync |
 | `server/` tick | `match.process_tick` → `engine_core` или stub | `TickInput`, `TickResult` |
 | `db/` | `load_catalog()` при старте сервера | декларативный контент |

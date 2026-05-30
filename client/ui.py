@@ -29,7 +29,14 @@ MILK = (210, 225, 255)
 TILE_SEL = (255, 210, 70)
 TILE_SEL_GLOW = (255, 240, 170)
 WATER_LOW = (210, 110, 85)
+WATER_CRITICAL = (196, 56, 40)
 WATER_OK = (65, 155, 210)
+HUNGER_LOW = (220, 150, 60)
+HUNGER_CRITICAL = (184, 48, 48)
+WATER_LOW_THRESHOLD = 50
+WATER_CRITICAL_THRESHOLD = 25
+ANIMAL_HUNGER_WARN_TICKS = 30
+ANIMAL_HUNGER_STOP_TICKS = 40
 GROWTH = (95, 175, 75)
 GROWTH_READY = (255, 195, 45)
 TEXT = (42, 36, 30)
@@ -51,8 +58,8 @@ HEADER_BAR = (55, 45, 38, 140)
 WIDTH, HEIGHT = 1280, 800
 FARM_X, FARM_Y = 24, 108
 FARM_COLS = 4
-FARM_PLANT_SLOTS = 6
-FARM_ANIMAL_SLOTS = 2
+FARM_PLANT_SLOTS = 12
+FARM_ANIMAL_SLOTS = 8
 FARM_TILE_COUNT = FARM_PLANT_SLOTS + FARM_ANIMAL_SLOTS
 TILE_SIZE = 62
 TILE_GAP = 8
@@ -191,6 +198,7 @@ EVENT_RU = {
     "ANIMAL_FED": "Покормлено",
     "ANIMAL_PRODUCED": "Надоено",
     "FEED_FAILED": "Не покормить",
+    "WATER_FAILED": "Не полить",
     "SABOTAGE_APPLIED": "Саботаж",
     "SABOTAGE_FAILED": "Саботаж не вышел",
     "CONTRACT_ERROR": "Ошибка",
@@ -618,12 +626,17 @@ def humanize_event(ev: dict) -> str | None:
         return f"Надоено: {product_label(pl.get('product_id', 'milk'))}"
     if et == "FEED_FAILED":
         reasons = {
-            "NOT_ENOUGH_FEED": "нет корма — купи в магазине",
+            "NOT_ENOUGH_MONEY": "не хватает Bestiki",
             "NO_ANIMAL": "нет животного",
             "WRONG_ZONE": "не загон",
             "NOT_OWNER": "не твой загон",
         }
         return f"Кормление не вышло — {reasons.get(pl.get('reason'), pl.get('reason', ''))}"
+    if et == "WATER_FAILED":
+        reasons = {
+            "NOT_ENOUGH_MONEY": "не хватает Bestiki",
+        }
+        return f"Полив не вышел — {reasons.get(pl.get('reason'), pl.get('reason', ''))}"
     if et == "ANIMAL_PURCHASE_FAILED":
         reasons = {
             "NOT_ENOUGH_MONEY": "не хватает Bestiki",
@@ -1287,8 +1300,10 @@ def tile_hint(tile: dict | None, selected_seed: str, my_player_id: str | None = 
             return "Пустой загон · купить корову (C)"
         name = animal_label(tile.get("occupant_id"))
         hunger = tile.get("hunger_ticks") or 0
-        if hunger > 30:
+        if hunger >= ANIMAL_HUNGER_STOP_TICKS:
             return f"{name} · голодна — покорми (F)"
+        if hunger >= ANIMAL_HUNGER_WARN_TICKS:
+            return f"{name} · пора кормить (F)"
         prod_elapsed = tile.get("production_elapsed_sec") or 0
         prod_needed = tile.get("production_interval_sec") or 0
         if prod_needed > 0:
@@ -1305,7 +1320,7 @@ def tile_hint(tile: dict | None, selected_seed: str, my_player_id: str | None = 
     ripe = growth_needed > 0 and growth_elapsed >= growth_needed
     if ripe:
         return f"{name} · созрело — собери (H), лишнее продай (V)"
-    if water is not None and water < 50:
+    if water is not None and water < WATER_LOW_THRESHOLD:
         if growth_needed > 0:
             pct = min(100, int(growth_elapsed * 100 / growth_needed))
             return f"{name} · рост {pct}% · нужен полив (W)"
@@ -1313,7 +1328,7 @@ def tile_hint(tile: dict | None, selected_seed: str, my_player_id: str | None = 
     if growth_needed > 0:
         pct = min(100, int(growth_elapsed * 100 / growth_needed))
         return f"{name} · рост {pct}%"
-    if water is not None and water >= 50:
+    if water is not None and water >= WATER_LOW_THRESHOLD:
         return f"{name} · можно собирать (H)"
     return f"На грядке: {name}"
 
@@ -1381,12 +1396,38 @@ def draw_farm_tile(
         screen.blit(surf, surf.get_rect(midtop=(rect.centerx, rect.y + 36)))
 
         if tile.get("zone_type") == "ANIMAL":
+            hunger = tile.get("hunger_ticks") or 0
+            if own and hunger >= ANIMAL_HUNGER_WARN_TICKS:
+                pulse = 3 + int(2 * abs((pygame.time.get_ticks() % 900) - 450) / 450)
+                border_color = (
+                    HUNGER_CRITICAL
+                    if hunger >= ANIMAL_HUNGER_STOP_TICKS
+                    else HUNGER_LOW
+                )
+                pygame.draw.rect(
+                    screen,
+                    border_color,
+                    rect.inflate(pulse, pulse),
+                    3,
+                    border_radius=12,
+                )
             prod_elapsed = tile.get("production_elapsed_sec") or 0
             prod_needed = tile.get("production_interval_sec") or 0
-            if prod_needed > 0:
+            bar_y = rect.bottom - 14
+            if prod_needed > 0 and hunger < ANIMAL_HUNGER_STOP_TICKS:
                 ratio = min(1.0, prod_elapsed / prod_needed)
-                bar = pygame.Rect(rect.x + 8, rect.bottom - 14, rect.w - 16, 7)
+                bar = pygame.Rect(rect.x + 8, bar_y, rect.w - 16, 7)
                 draw_progress_bar(screen, bar, ratio, MILK)
+                bar_y -= 10
+            if own and hunger >= ANIMAL_HUNGER_WARN_TICKS:
+                hunger_ratio = min(1.0, hunger / float(ANIMAL_HUNGER_STOP_TICKS))
+                hbar = pygame.Rect(rect.x + 8, bar_y, rect.w - 16, 7)
+                hcolor = (
+                    HUNGER_CRITICAL
+                    if hunger >= ANIMAL_HUNGER_STOP_TICKS
+                    else HUNGER_LOW
+                )
+                draw_progress_bar(screen, hbar, hunger_ratio, hcolor)
             return
 
         if growth_needed > 0:
@@ -1398,8 +1439,27 @@ def draw_farm_tile(
         if water is not None:
             ratio = min(1.0, water / 100.0)
             bar = pygame.Rect(rect.x + 8, rect.bottom - 14, rect.w - 16, 7)
-            bar_color = WATER_OK if water >= 50 else WATER_LOW
+            if water < WATER_CRITICAL_THRESHOLD:
+                bar_color = WATER_CRITICAL
+            elif water < WATER_LOW_THRESHOLD:
+                bar_color = WATER_LOW
+            else:
+                bar_color = WATER_OK
             draw_progress_bar(screen, bar, ratio, bar_color)
+            if own and water < WATER_LOW_THRESHOLD:
+                pulse = 3 + int(2 * abs((pygame.time.get_ticks() % 900) - 450) / 450)
+                border_color = (
+                    WATER_CRITICAL
+                    if water < WATER_CRITICAL_THRESHOLD
+                    else WATER_LOW
+                )
+                pygame.draw.rect(
+                    screen,
+                    border_color,
+                    rect.inflate(pulse, pulse),
+                    3,
+                    border_radius=12,
+                )
     else:
         label = "загон" if tile.get("zone_type") == "ANIMAL" else "пусто"
         surf = fonts["small"].render(label, True, TEXT_SOFT)

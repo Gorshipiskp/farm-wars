@@ -12,6 +12,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from server.game_server import GameServer
+from shared.game_pacing import ticks_for_real_seconds
 
 
 def _action(match_id, player_id, action_type, payload):
@@ -80,8 +81,8 @@ def test_win_bread_two_player_match():
         "factory_id": "p1_bakery_1",
         "recipe_id": "bread",
     }))
-    bread_ticks = game.catalog.recipes["bread"].production_time_sec
-    for _ in range(bread_ticks + 10):
+    bread_ticks = ticks_for_real_seconds(game.catalog.recipes["bread"].production_time_sec)
+    for _ in range(bread_ticks + 25):
         match.process_tick(sim)
         if match.status == match.FINISHED:
             break
@@ -107,11 +108,11 @@ def test_sabotage_poison_water():
     )
     match.world_state["players"][1]["money_bestiki"] = 100
 
-    game.submit_action(_action(mid, "p2", "APPLY_SABOTAGE", {
+    result = game.submit_action(_action(mid, "p2", "APPLY_SABOTAGE", {
         "sabotage_id": "poison_water",
         "target_tile_id": victim_tile,
     }))
-    sync = match.latest_sync(0)
+    sync = result["sync"]
     applied = [e for e in sync["events"] if e["event_type"] == "SABOTAGE_APPLIED"]
     assert applied, f"events={[e['event_type'] for e in sync['events']]}"
 

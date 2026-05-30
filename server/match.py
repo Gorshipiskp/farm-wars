@@ -13,6 +13,7 @@ from db.loader import GameContentCatalog
 from server.action_enricher import enrich_actions_for_tick
 from server.animals import process_buy_animal
 from server.random_events import maybe_random_event_action
+from server.stipend import apply_stipends
 from server.sabotage import process_apply_sabotage
 from server.sell import process_sell_product
 from server.shop import process_buy_product
@@ -106,7 +107,8 @@ class Match:
             self.status = self.RUNNING
             self._push_sync([], bump_tick=False)
 
-    def enqueue_action(self, envelope: dict) -> None:
+    def enqueue_action(self, envelope: dict) -> str:
+        """Return ``immediate`` if applied on server now, else ``queued`` for engine tick."""
         with self._lock:
             if self.status != self.RUNNING:
                 raise ValueError("MATCH_NOT_RUNNING")
@@ -128,7 +130,7 @@ class Match:
                 }
                 label = labels.get(action_type, action_type)
                 self._handle_server_only_immediate(action, processor, label)
-                return
+                return "immediate"
 
             log.info(
                 "Action queued match=%s player=%s type=%s payload=%s",
@@ -138,6 +140,7 @@ class Match:
                 action.get("payload"),
             )
             self.action_queue.append(action)
+            return "queued"
 
     def _handle_server_only_immediate(self, action: dict, processor, label: str) -> None:
         if self.world_state is None:
@@ -183,6 +186,8 @@ class Match:
             world_event = maybe_random_event_action(self.catalog, tick_id)
             if world_event is not None:
                 engine_queue.append(world_event)
+
+            server_events.extend(apply_stipends(self.world_state, self.catalog, tick_id))
 
             engine_actions, pre_events = enrich_actions_for_tick(
                 engine_queue, self.world_state, self.catalog, tick_id

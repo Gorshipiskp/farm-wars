@@ -1,5 +1,6 @@
 -- Farm Wars — game content seed (plants, animals, recipes, events, PvP)
--- growth_time_sec / production_interval_sec = simulation ticks (see shared/game_pacing.py)
+-- plants.growth_time_sec, animals.production_interval_sec = simulation ticks
+-- recipes.production_time_sec = wall-clock seconds (→ ticks in action_enricher)
 
 PRAGMA foreign_keys = ON;
 
@@ -46,12 +47,12 @@ VALUES
 
 INSERT INTO plants (plant_id, product_id, seed_product_id, display_name,
                     growth_time_sec, water_decay_per_tick, initial_water_level)
-VALUES ('wheat', 'wheat', 'wheat_seed', 'Пшеница', 400, 0, 55),
-       ('corn', 'corn', 'corn_seed', 'Кукуруза', 480, 0, 45),
-       ('potato', 'potato', 'potato_seed', 'Картофель', 320, 0, 60),
-       ('tomato', 'tomato', 'tomato_seed', 'Помидор', 360, 0, 50),
-       ('carrot', 'carrot', 'carrot_seed', 'Морковь', 340, 0, 55),
-       ('sunflower', 'sunflower', 'sunflower_seed', 'Подсолнечник', 420, 0, 48);
+VALUES ('wheat', 'wheat', 'wheat_seed', 'Пшеница', 400, 1, 55),
+       ('corn', 'corn', 'corn_seed', 'Кукуруза', 480, 1, 45),
+       ('potato', 'potato', 'potato_seed', 'Картофель', 320, 1, 60),
+       ('tomato', 'tomato', 'tomato_seed', 'Помидор', 360, 1, 50),
+       ('carrot', 'carrot', 'carrot_seed', 'Морковь', 340, 1, 55),
+       ('sunflower', 'sunflower', 'sunflower_seed', 'Подсолнечник', 420, 1, 48);
 
 -- ---------------------------------------------------------------------------
 -- Animals (4)
@@ -79,14 +80,14 @@ VALUES ('BAKERY', 'Пекарня', 2.0),
 
 INSERT INTO recipes (recipe_id, building_type, output_product_id,
                      production_time_sec, price_override)
-VALUES ('bread', 'BAKERY', 'bread', 240, NULL),
-       ('cake', 'BAKERY', 'cake', 520, 100),
-       ('pie', 'BAKERY', 'pie', 360, NULL),
-       ('soup', 'BAKERY', 'soup', 280, NULL),
-       ('omelette', 'BAKERY', 'omelette', 200, NULL),
-       ('cheese', 'DAIRY', 'cheese', 300, NULL),
-       ('butter', 'DAIRY', 'butter', 220, NULL),
-       ('sausage', 'MEAT', 'sausage', 320, NULL);
+VALUES ('bread', 'BAKERY', 'bread', 30, NULL),
+       ('cake', 'BAKERY', 'cake', 65, 100),
+       ('pie', 'BAKERY', 'pie', 45, NULL),
+       ('soup', 'BAKERY', 'soup', 35, NULL),
+       ('omelette', 'BAKERY', 'omelette', 25, NULL),
+       ('cheese', 'DAIRY', 'cheese', 40, NULL),
+       ('butter', 'DAIRY', 'butter', 30, NULL),
+       ('sausage', 'MEAT', 'sausage', 50, NULL);
 
 INSERT INTO recipe_ingredients (recipe_id, product_id, amount)
 VALUES ('bread', 'flour', 2),

@@ -34,7 +34,6 @@ def create_initial_world(
         {"product_id": "tomato_seed", "amount": 1},
         {"product_id": "carrot_seed", "amount": 1},
         {"product_id": "flour", "amount": 1},
-        {"product_id": "feed", "amount": 3},
     ]
 
     world_players = []

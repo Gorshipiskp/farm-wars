@@ -1,5 +1,6 @@
 """Farm Wars game server: registry + tick loop + catalog."""
 
+import copy
 import logging
 import os
 
@@ -68,8 +69,18 @@ class GameServer:
             envelope.get("player_id"),
             action.get("action_type"),
         )
-        match.enqueue_action(envelope)
-        return {"contract_version": "v1", "accepted": True}
+        kind = match.enqueue_action(envelope)
+        if kind == "queued":
+            sync = match.process_tick(self.simulate_tick)
+        elif match.sync_history:
+            sync = copy.deepcopy(match.sync_history[-1])
+        else:
+            sync = None
+        return {
+            "contract_version": "v1",
+            "accepted": True,
+            "sync": sync,
+        }
 
     def get_sync(self, match_id: str, since_tick: int = 0) -> dict | None:
         match = self.registry.get_match(match_id)

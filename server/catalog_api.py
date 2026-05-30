@@ -6,7 +6,7 @@ from db.loader import GameContentCatalog
 from server.animals import animal_buy_price
 
 # Extra shop items (not grown on farm).
-SHOP_EXTRA_PRODUCT_IDS = ("flour", "feed")
+SHOP_EXTRA_PRODUCT_IDS = ("flour",)
 
 
 def catalog_for_client(catalog: GameContentCatalog) -> dict:
@@ -21,7 +21,9 @@ def catalog_for_client(catalog: GameContentCatalog) -> dict:
         products.append({
             "product_id": plant.seed_product_id,
             "price": seed.base_sell_price,
+            "base_sell_price": seed.base_sell_price,
             "display_name": seed.display_name,
+            "category": seed.category,
             "plant_id": plant_id,
         })
     for product_id in SHOP_EXTRA_PRODUCT_IDS:
@@ -33,7 +35,23 @@ def catalog_for_client(catalog: GameContentCatalog) -> dict:
         products.append({
             "product_id": product_id,
             "price": product.base_sell_price,
+            "base_sell_price": product.base_sell_price,
             "display_name": product.display_name,
+            "category": product.category,
+        })
+
+    seen_products = {p["product_id"] for p in products}
+    for product_id, product in sorted(catalog.products.items()):
+        if product_id in seen_products:
+            continue
+        if product.category not in ("RAW", "PROCESSED"):
+            continue
+        products.append({
+            "product_id": product_id,
+            "price": product.base_sell_price,
+            "base_sell_price": product.base_sell_price,
+            "display_name": product.display_name,
+            "category": product.category,
         })
 
     plants = []
@@ -53,6 +71,7 @@ def catalog_for_client(catalog: GameContentCatalog) -> dict:
     for animal_id, animal in sorted(catalog.animals.items()):
         animals.append({
             "animal_id": animal_id,
+            "product_id": animal.product_id,
             "price": animal_buy_price(catalog, animal),
             "display_name": animal.display_name,
         })

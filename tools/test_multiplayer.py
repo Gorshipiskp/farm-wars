@@ -15,6 +15,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from server.game_server import GameServer
+from shared.game_pacing import ticks_for_real_seconds
 
 
 def _action(match_id: str, player_id: str, action_type: str, payload: dict) -> dict:
@@ -116,10 +117,8 @@ def test_two_players_independent_actions():
     w2 = next(t for t in match.world_state["map"]["tiles"] if t["tile_id"] == p2_tile)
     assert (w2.get("water_level") or 0) >= 50
 
-    game.submit_action(_action(mid, "p2", "WATER_PLANT", {"tile_id": p1_tile}))
-    cross_tick = match.process_tick(sim)
-    assert cross_tick is not None
-    tick_events = cross_tick["events"]
+    cross = game.submit_action(_action(mid, "p2", "WATER_PLANT", {"tile_id": p1_tile}))
+    tick_events = cross["sync"]["events"]
     errors = [e for e in tick_events if e.get("event_type") == "CONTRACT_ERROR"]
     watered = [e for e in tick_events if e.get("event_type") == "PLANT_WATERED"]
     assert errors and not watered, "p2 watering p1 tile should fail"
@@ -141,21 +140,19 @@ def test_three_player_sabotage_chain():
         p["money_bestiki"] = money
 
     p1_plant = _tiles_for(match.world_state, "p1")[0]["tile_id"]
-    game.submit_action(_action(mid, "p2", "APPLY_SABOTAGE", {
+    r1 = game.submit_action(_action(mid, "p2", "APPLY_SABOTAGE", {
         "sabotage_id": "poison_water",
         "target_tile_id": p1_plant,
     }))
-    sync = match.latest_sync(0)
-    ok = [e for e in sync["events"] if e["event_type"] == "SABOTAGE_APPLIED"]
+    ok = [e for e in r1["sync"]["events"] if e["event_type"] == "SABOTAGE_APPLIED"]
     assert ok and ok[0]["payload"]["target_player_id"] == "p1"
 
     p2_plant = _tiles_for(match.world_state, "p2")[0]["tile_id"]
-    game.submit_action(_action(mid, "p3", "APPLY_SABOTAGE", {
+    r3 = game.submit_action(_action(mid, "p3", "APPLY_SABOTAGE", {
         "sabotage_id": "poison_water",
         "target_tile_id": p2_plant,
     }))
-    sync = match.latest_sync(0)
-    ok3 = [e for e in sync["events"] if e["event_type"] == "SABOTAGE_APPLIED"]
+    ok3 = [e for e in r3["sync"]["events"] if e["event_type"] == "SABOTAGE_APPLIED"]
     assert ok3 and ok3[-1]["payload"]["target_player_id"] == "p2"
     print("  [OK] p2 sabotages p1, p3 sabotages p2")
 
@@ -174,13 +171,13 @@ def test_win_only_one_winner_two_players():
         {"product_id": "wheat", "amount": 1},
     ]
     sim = game.simulate_tick
-    bread_ticks = game.catalog.recipes["bread"].production_time_sec
+    bread_ticks = ticks_for_real_seconds(game.catalog.recipes["bread"].production_time_sec)
 
     game.submit_action(_action(mid, "p1", "START_RECIPE", {
         "factory_id": "p1_bakery_1",
         "recipe_id": "bread",
     }))
-    for _ in range(bread_ticks + 10):
+    for _ in range(bread_ticks + 25):
         match.process_tick(sim)
         if match.status == match.FINISHED:
             break

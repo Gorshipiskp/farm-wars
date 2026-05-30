@@ -205,21 +205,34 @@ def simulate_tick(input_dict):
                         })
                         break
 
-                    factory["active_recipe_id"] = recipe_id
-                    factory["remaining_time_sec"] = duration_sec
-                    if "output_product_id" in payload:
-                        factory["output_product_id"] = payload["output_product_id"]
+                    if factory.get("active_recipe_id"):
+                        events.append({
+                            "contract_version": "v1",
+                            "event_type": "RECIPE_REJECTED",
+                            "server_tick": tick_id,
+                            "payload": {
+                                "player_id": player_id,
+                                "factory_id": factory_id,
+                                "recipe_id": recipe_id,
+                                "reason": "FACTORY_BUSY",
+                            },
+                        })
+                    else:
+                        factory["active_recipe_id"] = recipe_id
+                        factory["remaining_time_sec"] = duration_sec
+                        if "output_product_id" in payload:
+                            factory["output_product_id"] = payload["output_product_id"]
 
-                    events.append({
-                        "contract_version": "v1",
-                        "event_type": "RECIPE_STARTED",
-                        "server_tick": tick_id,
-                        "payload": {
-                            "factory_id": factory_id,
-                            "recipe_id": recipe_id,
-                            "player_id": player_id,
-                        },
-                    })
+                        events.append({
+                            "contract_version": "v1",
+                            "event_type": "RECIPE_STARTED",
+                            "server_tick": tick_id,
+                            "payload": {
+                                "factory_id": factory_id,
+                                "recipe_id": recipe_id,
+                                "player_id": player_id,
+                            },
+                        })
                     break
 
             if not found:
@@ -538,7 +551,7 @@ def simulate_tick(input_dict):
 
     # Шаг 4.5: пассивная фаза — испарение со всех грядок, рост/смерть растений
     HEALTH_DECAY_PER_TICK = 10
-    DEFAULT_EVAPORATION = 0
+    DEFAULT_EVAPORATION = 1
 
     for tile in next_world_state["map"]["tiles"]:
         # Испарение — для всех грядок с водой
@@ -588,9 +601,10 @@ def simulate_tick(input_dict):
             tile["health"] = health
 
     # Шаг 4.55: пассивная фаза животных — голод и надой
-    from shared.game_pacing import ANIMAL_HUNGER_LIMIT_TICKS
-
-    ANIMAL_HUNGER_LIMIT = ANIMAL_HUNGER_LIMIT_TICKS
+    from shared.game_pacing import (
+        ANIMAL_HUNGER_LIMIT_TICKS,
+        ANIMAL_PRODUCTION_HUNGER_TICKS,
+    )
 
     for tile in next_world_state["map"]["tiles"]:
         if tile.get("occupant_type") != "ANIMAL" or not tile.get("occupant_id"):
@@ -598,7 +612,10 @@ def simulate_tick(input_dict):
 
         hunger = tile.get("hunger_ticks", 0) + 1
         tile["hunger_ticks"] = hunger
-        if hunger > ANIMAL_HUNGER_LIMIT:
+        if hunger > ANIMAL_HUNGER_LIMIT_TICKS:
+            continue
+
+        if hunger >= ANIMAL_PRODUCTION_HUNGER_TICKS:
             continue
 
         interval = tile.get("production_interval_sec") or 12

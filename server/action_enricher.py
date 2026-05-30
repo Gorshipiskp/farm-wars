@@ -9,8 +9,9 @@ import copy
 import logging
 
 from db.loader import GameContentCatalog
+from shared.game_pacing import ticks_for_real_seconds
+from server.care_costs import feed_care_cost, try_spend_bestiki, water_care_cost
 from server.world_util import (
-    consume_product,
     contract_error,
     find_player,
     find_tile,
@@ -20,6 +21,11 @@ from server.world_util import (
 log = logging.getLogger("farm_wars.server.enricher")
 
 DEFAULT_PLANT_HEALTH = 100
+
+
+def _recipe_duration_ticks(production_time_sec: int) -> int:
+    """Catalog production_time_sec is wall-clock seconds; engine counts ticks."""
+    return ticks_for_real_seconds(float(production_time_sec))
 
 
 def enrich_actions_for_tick(
@@ -60,6 +66,20 @@ def enrich_actions_for_tick(
                 continue
             enriched.append(action_copy)
 
+        elif action_type == "WATER_AREA":
+            result = _expand_water_area(action_copy, world_state, catalog, tick_id)
+            if isinstance(result, dict):
+                pre_events.append(result)
+            else:
+                enriched.extend(result)
+
+        elif action_type == "WATER_PLANT":
+            event = _enrich_water_plant(action_copy, world_state, catalog, tick_id)
+            if event is not None:
+                pre_events.append(event)
+                continue
+            enriched.append(action_copy)
+
         elif action_type in ("BUY_PRODUCT", "BUY_ANIMAL", "APPLY_SABOTAGE"):
             log.error(
                 "%s reached enricher (should be server-only): %s",
@@ -78,6 +98,122 @@ def enrich_actions_for_tick(
     return enriched, pre_events
 
 
+def _plant_tiles_for_player(world_state: dict, player_id: str) -> list[dict]:
+    tiles = world_state.get("map", {}).get("tiles") or []
+    plant = [
+        t for t in tiles
+        if t.get("owner_player_id") == player_id and t.get("zone_type") == "PLANT"
+    ]
+    plant.sort(key=lambda t: t["tile_id"])
+    return plant
+
+
+def _tiles_in_plant_radius(
+    center_tile_id: str,
+    plant_tiles: list[dict],
+    map_width: int,
+    radius: int,
+) -> list[str]:
+    ids = [t["tile_id"] for t in plant_tiles]
+    if center_tile_id not in ids:
+        return []
+    center_idx = ids.index(center_tile_id)
+    center_col = center_idx % map_width
+    center_row = center_idx // map_width
+    out: list[str] = []
+    for tile in plant_tiles:
+        idx = ids.index(tile["tile_id"])
+        col = idx % map_width
+        row = idx // map_width
+        if max(abs(col - center_col), abs(row - center_row)) <= radius:
+            out.append(tile["tile_id"])
+    return out
+
+
+def _enrich_water_plant(
+    action: dict,
+    world_state: dict,
+    catalog: GameContentCatalog,
+    tick_id: int,
+) -> dict | None:
+    payload = action.setdefault("payload", {})
+    tile_id = payload.get("tile_id")
+    player_id = action.get("player_id")
+
+    if not tile_id:
+        return contract_error(tick_id, "MISSING_FIELD", "tile_id required", "payload.tile_id")
+
+    tile = find_tile(world_state, tile_id)
+    if tile is None:
+        return contract_error(tick_id, "MISSING_FIELD", f"Tile not found: {tile_id}", "payload.tile_id")
+    if tile.get("owner_player_id") != player_id:
+        return contract_error(tick_id, "INVALID_TYPE", "Not your tile", "payload.tile_id")
+    if tile.get("zone_type") != "PLANT":
+        return contract_error(tick_id, "INVALID_TYPE", "Water only on garden tiles", "payload.tile_id")
+
+    player = find_player(world_state, player_id)
+    if player is None:
+        return contract_error(
+            tick_id, "MISSING_FIELD", f"Player not found: {player_id}", "player_id"
+        )
+
+    cost = water_care_cost(catalog)
+    if not try_spend_bestiki(player, cost):
+        return _water_failed(tick_id, player_id, tile_id, "NOT_ENOUGH_MONEY", cost)
+    return None
+
+
+def _expand_water_area(
+    action: dict,
+    world_state: dict,
+    catalog: GameContentCatalog,
+    tick_id: int,
+) -> list[dict] | dict:
+    payload = action.setdefault("payload", {})
+    center_id = payload.get("tile_id")
+    if not center_id:
+        return contract_error(tick_id, "MISSING_FIELD", "tile_id required", "payload.tile_id")
+
+    player_id = action.get("player_id")
+    player = find_player(world_state, player_id)
+    if player is None:
+        return contract_error(
+            tick_id, "MISSING_FIELD", f"Player not found: {player_id}", "player_id"
+        )
+
+    cost = water_care_cost(catalog)
+    if not try_spend_bestiki(player, cost):
+        return _water_failed(tick_id, player_id, center_id, "NOT_ENOUGH_MONEY", cost)
+
+    radius = int(payload.get("radius", 1))
+    if radius < 0:
+        radius = 0
+    if radius > 3:
+        radius = 3
+
+    center = find_tile(world_state, center_id)
+    if center is None:
+        return contract_error(tick_id, "MISSING_FIELD", f"Tile not found: {center_id}", "payload.tile_id")
+    if center.get("owner_player_id") != player_id:
+        return contract_error(tick_id, "INVALID_TYPE", "Not your tile", "payload.tile_id")
+    if center.get("zone_type") != "PLANT":
+        return contract_error(tick_id, "INVALID_TYPE", "Water only on garden tiles", "payload.tile_id")
+
+    map_width = int(world_state.get("map", {}).get("width", 4))
+    plant_tiles = _plant_tiles_for_player(world_state, player_id)
+    target_ids = _tiles_in_plant_radius(center_id, plant_tiles, map_width, radius)
+    if not target_ids:
+        return contract_error(tick_id, "INVALID_TYPE", "No tiles in range", "payload.tile_id")
+
+    expanded: list[dict] = []
+    for tid in target_ids:
+        ac = copy.deepcopy(action)
+        ac["action_type"] = "WATER_PLANT"
+        ac["payload"] = {"tile_id": tid}
+        expanded.append(ac)
+    return expanded
+
+
 def _enrich_place_on_tile(action: dict, catalog: GameContentCatalog, tick_id: int) -> dict | None:
     payload = action.setdefault("payload", {})
     plant_id = payload.get("plant_id")
@@ -91,7 +227,8 @@ def _enrich_place_on_tile(action: dict, catalog: GameContentCatalog, tick_id: in
     payload["initial_health"] = DEFAULT_PLANT_HEALTH
     payload["initial_water_level"] = plant.initial_water_level
     payload["growth_time_sec"] = plant.growth_time_sec
-    payload["water_decay_per_tick"] = plant.water_decay_per_tick
+    # Минимум 1 — иначе влажность после полива не убывает (см. пассивная фаза тика).
+    payload["water_decay_per_tick"] = max(1, int(plant.water_decay_per_tick))
     payload["seed_product_id"] = plant.seed_product_id
     payload["crop_product_id"] = plant.product_id
     return None
@@ -150,7 +287,7 @@ def _enrich_start_recipe(
         queue = factory.setdefault("queue", [])
         queue.append({
             "recipe_id": recipe_id,
-            "duration_sec": recipe.production_time_sec,
+            "duration_sec": _recipe_duration_ticks(recipe.production_time_sec),
         })
         return make_event(tick_id, "RECIPE_QUEUED", {
             "player_id": action["player_id"],
@@ -158,7 +295,7 @@ def _enrich_start_recipe(
             "recipe_id": recipe_id,
         })
 
-    payload["duration_sec"] = recipe.production_time_sec
+    payload["duration_sec"] = _recipe_duration_ticks(recipe.production_time_sec)
     payload["output_product_id"] = recipe.output_product_id
     return None
 
@@ -191,18 +328,15 @@ def _enrich_feed_animal(
     if animal is None:
         return _feed_failed(tick_id, player_id, tile_id, "UNKNOWN_ANIMAL")
 
-    feed_id = animal.feed_product_id
-    if not feed_id:
-        return _feed_failed(tick_id, player_id, tile_id, "NO_FEED_PRODUCT")
-
     player = find_player(world_state, player_id)
     if player is None:
         return contract_error(
             tick_id, "MISSING_FIELD", f"Player not found: {player_id}", "player_id"
         )
 
-    if not consume_product(player, feed_id, 1):
-        return _feed_failed(tick_id, player_id, tile_id, "NOT_ENOUGH_FEED")
+    cost = feed_care_cost(catalog)
+    if not try_spend_bestiki(player, cost):
+        return _feed_failed(tick_id, player_id, tile_id, "NOT_ENOUGH_MONEY", cost)
 
     payload["animal_id"] = animal_id
     payload["production_interval_sec"] = animal.production_interval_sec
@@ -210,11 +344,33 @@ def _enrich_feed_animal(
     return None
 
 
-def _feed_failed(tick_id: int, player_id: str, tile_id: str | None, reason: str) -> dict:
+def _water_failed(
+    tick_id: int,
+    player_id: str,
+    tile_id: str | None,
+    reason: str,
+    cost: int = 0,
+) -> dict:
+    return make_event(tick_id, "WATER_FAILED", {
+        "player_id": player_id,
+        "tile_id": tile_id,
+        "reason": reason,
+        "cost": cost,
+    })
+
+
+def _feed_failed(
+    tick_id: int,
+    player_id: str,
+    tile_id: str | None,
+    reason: str,
+    cost: int = 0,
+) -> dict:
     return make_event(tick_id, "FEED_FAILED", {
         "player_id": player_id,
         "tile_id": tile_id,
         "reason": reason,
+        "cost": cost,
     })
 
 

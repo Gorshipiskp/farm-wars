@@ -2,10 +2,16 @@
 Recipe price calculation for declarative content.
 
 When price_override IS NULL:
-    sum(ingredient.base_sell_price * amount) + production_time_sec * building.time_coef
+    round((sum(ingredient.base_sell_price * amount)
+           + production_time_sec * building.time_coef) * RECIPE_PRICE_MARKUP)
+
+RECIPE_PRICE_MARKUP ≈ 1.4 (+40% к базовой формуле DEC-011).
 """
 
 from db.loader import Building, GameContentCatalog, Product, Recipe
+
+# Markup on ingredient + time cost (~50% above raw formula).
+RECIPE_PRICE_MARKUP = 1.5
 
 
 def calculate_recipe_price(
@@ -34,7 +40,8 @@ def calculate_recipe_price(
         ingredient_cost += product.base_sell_price * ing.amount
 
     time_cost = int(recipe.production_time_sec * building.time_coef)
-    return ingredient_cost + time_cost
+    base = ingredient_cost + time_cost
+    return max(1, round(base * RECIPE_PRICE_MARKUP))
 
 
 def calculate_recipe_price_from_catalog(

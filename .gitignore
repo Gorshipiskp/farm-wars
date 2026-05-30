@@ -7,6 +7,12 @@ dist/
 
 # C++ build
 engine_cpp/build/
+*.pyd
+
+# Web (Vite)
+web/node_modules/
+web/dist/
+web/.svelte-kit/
 
 # Database (local dev)
 db/farm_wars.db

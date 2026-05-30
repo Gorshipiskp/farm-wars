@@ -1167,7 +1167,7 @@ def test_animals_feed_and_milk():
     tile["production_interval_sec"] = 3
     tile["product_id"] = "milk"
     tile["hunger_ticks"] = 0
-    world["players"][0]["inventory"].append({"product_id": "feed", "amount": 2})
+    world["players"][0]["money_bestiki"] = 200
 
     tick_input = {
         "contract_version": "v1",
@@ -1208,6 +1208,35 @@ def test_animals_feed_and_milk():
     milk = next((i for i in inv if i["product_id"] == "milk"), None)
     assert milk and milk["amount"] >= 1
     print("  [OK] Fed cow, milk produced after interval")
+
+
+def test_animals_no_production_when_unfed():
+    print("\n--- Test 11b: unfed cow does not advance production ---")
+    from engine_core_stub.stub import simulate_tick as sim
+    world = load_fixture("world_state", "minimal_world.json")
+    tile = next(t for t in world["map"]["tiles"] if t["tile_id"] == "t7")
+    tile["occupant_type"] = "ANIMAL"
+    tile["occupant_id"] = "cow"
+    tile["production_elapsed_sec"] = 2
+    tile["production_interval_sec"] = 3
+    tile["product_id"] = "milk"
+    tile["hunger_ticks"] = 40
+
+    tick_input = {
+        "contract_version": "v1",
+        "tick_id": 1,
+        "world_state": world,
+        "actions": [],
+    }
+    result = sim(tick_input)
+    tile_after = next(
+        t for t in result["next_world_state"]["map"]["tiles"] if t["tile_id"] == "t7"
+    )
+    assert tile_after["production_elapsed_sec"] == 2, (
+        "production_elapsed_sec must not advance when hungry"
+    )
+    assert not any(e["event_type"] == "ANIMAL_PRODUCED" for e in result["events"])
+    print("  [OK] hungry cow: production frozen")
 
 
 # ===== Тесты APPLY_EVENT (engine_cpp/004) =====
@@ -1470,6 +1499,7 @@ def main():
     test_factory_queue_auto_start()
     test_stub_actions_silently_ignored()
     test_animals_feed_and_milk()
+    test_animals_no_production_when_unfed()
     test_event_drought()
     test_event_rain()
     test_event_rain_water_caps_at_100()

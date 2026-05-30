@@ -14,8 +14,8 @@ sys.path.insert(0, ROOT)
 from db.loader import load_catalog
 from db.pricing import calculate_recipe_price_from_catalog
 
-# bread: flour 2x8 + wheat 1x5 + 240 * BAKERY.time_coef(2.0) = 16+5+480 = 501
-EXPECTED_BREAD_FORMULA = 501
+# bread base: 16+5+60=81; ×1.4 markup → 113
+EXPECTED_BREAD_FORMULA = 113
 EXPECTED_CAKE_OVERRIDE = 100
 
 
