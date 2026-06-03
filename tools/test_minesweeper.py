@@ -46,13 +46,23 @@ def test_mine_count():
 def test_flag_toggle():
     print("\n--- Test 4: Flag toggle works ---")
     m = Minesweeper(9, 9, 10)
-    m.click(0, 0)  # place mines
-    m.toggle_flag(5, 5)
+    m.click(4, 4)  # place mines (center, safe)
+    m.toggle_flag(8, 8)
     board = m.get_board()
-    assert board[5][5]["is_flagged"] is True
-    m.toggle_flag(5, 5)
+    assert board[8][8]["is_flagged"] is True
+    m.toggle_flag(8, 8)
     board = m.get_board()
-    assert board[5][5]["is_flagged"] is False
+    assert board[8][8]["is_flagged"] is False
+    print("  [OK]")
+
+def test_cannot_flag_revealed():
+    print("\n--- Test 5: Cannot flag revealed cell ---")
+    m = Minesweeper(9, 9, 10)
+    m.click(4, 4)  # first click reveals center
+    m.toggle_flag(4, 4)  # try to flag revealed cell
+    board = m.get_board()
+    assert board[4][4]["is_flagged"] is False
+    assert board[4][4]["is_revealed"] is True
     print("  [OK]")
 
 
