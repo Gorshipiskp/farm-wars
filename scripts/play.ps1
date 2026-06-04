@@ -3,10 +3,12 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $Root
 
+. (Join-Path $Root "scripts\install-node.ps1")
+
 Write-Host "==> Farm Wars - play from source" -ForegroundColor Cyan
 
 if (-not (Get-Command py -ErrorAction SilentlyContinue)) {
-    throw "Python launcher 'py' not found. Install Python 3.11+ from python.org"
+    throw "Python launcher 'py' not found. Install Python 3.11+ from https://www.python.org/downloads/"
 }
 
 if (-not (Test-Path "db\farm_wars.db")) {
@@ -17,13 +19,19 @@ if (-not (Test-Path "db\farm_wars.db")) {
 $distIndex = "web\dist\index.html"
 if (-not (Test-Path $distIndex)) {
     if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-        throw "web\dist missing. Install Node.js, then: cd web; npm ci; npm run build"
+        Write-Host "==> Node.js not found (needed once to build the web client)"
+        if (-not (Ensure-NodeInstalled)) {
+            exit 1
+        }
     }
-    Write-Host "==> Building web client (first time)"
+    Write-Host "==> Building web client (first time, may take 1-2 min)"
     Push-Location web
     if (-not (Test-Path node_modules)) { npm ci }
     npm run build
     Pop-Location
+    if (-not (Test-Path $distIndex)) {
+        throw "web build failed: $distIndex still missing"
+    }
 }
 
 $env:FARM_WARS_OPEN_BROWSER = "1"
