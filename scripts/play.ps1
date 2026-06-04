@@ -1,9 +1,9 @@
-# Run Farm Wars from source (Windows PowerShell) — server + web UI in browser.
+# Run Farm Wars from source (Windows PowerShell): server + web UI in browser.
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $Root
 
-Write-Host "==> Farm Wars — play from source" -ForegroundColor Cyan
+Write-Host "==> Farm Wars - play from source" -ForegroundColor Cyan
 
 if (-not (Get-Command py -ErrorAction SilentlyContinue)) {
     throw "Python launcher 'py' not found. Install Python 3.11+ from python.org"
@@ -30,6 +30,7 @@ $env:FARM_WARS_OPEN_BROWSER = "1"
 if (-not $env:FARM_WARS_HOST) { $env:FARM_WARS_HOST = "0.0.0.0" }
 if (-not $env:FARM_WARS_PORT) { $env:FARM_WARS_PORT = "8765" }
 
+$localUrl = "http://127.0.0.1:" + $env:FARM_WARS_PORT + "/"
 Write-Host "==> Starting server (Ctrl+C to stop)"
-Write-Host "    Local: http://127.0.0.1:$($env:FARM_WARS_PORT)/"
+Write-Host ("    Local: " + $localUrl)
 py -m server
