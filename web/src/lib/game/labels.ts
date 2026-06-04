@@ -126,6 +126,10 @@ export function tileHint(
     }
     return "Клетка соперника · саботаж (X)";
   }
+  const myFlags = tile.flags ?? [];
+  if (myFlags.includes("MINED")) {
+    return "Мина на грядке — кликни, чтобы открыть сапёр";
+  }
   if (tile.zone_type === "ANIMAL") {
     const occ = tile.occupant_type ?? "EMPTY";
     if (occ === "EMPTY" || !occ) {

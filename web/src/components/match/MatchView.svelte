@@ -6,6 +6,7 @@
   import TileContextMenu from "./TileContextMenu.svelte";
   import WateringCanDragFollower from "./WateringCanDragFollower.svelte";
   import WinOverlay from "./WinOverlay.svelte";
+  import MinesweeperModal from "./MinesweeperModal.svelte";
   import { get } from "svelte/store";
   import { activeDrag, dragPointer } from "$lib/stores/drag";
   import {
@@ -16,6 +17,7 @@
     sendPlant,
     sendRecipe,
     sendSell,
+    sendClearMine,
     sendSabotage,
   } from "$lib/actions/gameActions";
   import { plantIds, winProductId } from "$lib/game/catalogData";
@@ -46,7 +48,11 @@
   );
   const hasOpponents = $derived(opponents($worldState, $playerId).length > 0);
 
+  let defuseTileId = $state<string | null>(null);
+  const defuseTile = $derived(findTile($worldState, defuseTileId));
+
   function onKeydown(e: KeyboardEvent) {
+    if (defuseTileId) return;
     if ($matchFinished || shouldIgnoreGameHotkey(e)) return;
     const action = matchHotkeyFromEvent(e);
     if (!action) return;
@@ -69,7 +75,29 @@
   }
 
   function onSelectTile(tileId: string) {
+    const tile = findTile($worldState, tileId);
+    if (
+      tile &&
+      $playerId &&
+      tile.owner_player_id === $playerId &&
+      (tile.flags ?? []).includes("MINED")
+    ) {
+      defuseTileId = tileId;
+      selectedTileId.set(tileId);
+      return;
+    }
     selectedTileId.set(tileId);
+  }
+
+  function closeMinesweeper(): void {
+    defuseTileId = null;
+  }
+
+  async function onMinesweeperWin(): Promise<void> {
+    const tileId = defuseTileId;
+    defuseTileId = null;
+    if (!tileId) return;
+    await sendClearMine(tileId);
   }
 
   function onWindowDragOver(e: DragEvent) {
@@ -114,6 +142,14 @@
     </div>
   </section>
 </div>
+
+{#if defuseTileId}
+  <MinesweeperModal
+    tileLabel={defuseTile?.tile_id ?? "грядка"}
+    onWin={() => void onMinesweeperWin()}
+    onClose={closeMinesweeper}
+  />
+{/if}
 
 {#if $matchFinished && winnerId}
   <WinOverlay

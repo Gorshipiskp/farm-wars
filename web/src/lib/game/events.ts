@@ -119,6 +119,18 @@ export function humanizeEvent(ev: GameEvent): string | null {
     const r = String(pl.reason ?? "");
     return `Корова не куплена — ${reasons[r] ?? r}`;
   }
+  if (et === "MINE_CLEARED") {
+    return "Мина обезврежена!";
+  }
+  if (et === "CLEAR_MINE_FAILED") {
+    const reasons: Record<string, string> = {
+      NOT_MINED: "здесь нет мины",
+      NOT_OWNER: "не твоя грядка",
+      UNKNOWN_TILE: "нет такой клетки",
+    };
+    const r = String(pl.reason ?? "");
+    return `Разминирование не вышло — ${reasons[r] ?? r}`;
+  }
   if (et === "SABOTAGE_APPLIED") {
     return `Саботаж: ${pl.sabotage_id ?? "?"} → ${pl.effect ?? ""}`;
   }
@@ -170,6 +182,7 @@ function shouldSkipEvent(ev: GameEvent, myPlayerId: string): boolean {
       "SELL_FAILED",
       "ANIMAL_PURCHASE_FAILED",
       "SABOTAGE_FAILED",
+      "CLEAR_MINE_FAILED",
     ]);
     if (skipTypes.has(ev.event_type ?? "")) return true;
   }

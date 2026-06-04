@@ -1294,6 +1294,8 @@ def tile_hint(tile: dict | None, selected_seed: str, my_player_id: str | None = 
         if "MINED" in flags:
             return "Клетка соперника · подозрительно (мина?)"
         return "Клетка соперника · саботаж (X)"
+    if "MINED" in (tile.get("flags") or []):
+        return "Мина на грядке — кликни, чтобы открыть сапёр"
     if tile.get("zone_type") == "ANIMAL":
         occ = tile.get("occupant_type", "EMPTY")
         if occ in (None, "EMPTY"):

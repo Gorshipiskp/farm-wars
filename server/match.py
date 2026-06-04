@@ -14,6 +14,7 @@ from server.action_enricher import enrich_actions_for_tick
 from server.animals import process_buy_animal
 from server.random_events import maybe_random_event_action
 from server.stipend import apply_stipends
+from server.mine_defuse import process_clear_mine
 from server.sabotage import process_apply_sabotage
 from server.sell import process_sell_product
 from server.shop import process_buy_product
@@ -22,13 +23,14 @@ from server.world_factory import create_initial_world
 log = logging.getLogger("farm_wars.server.match")
 
 SERVER_ONLY_ACTIONS = frozenset({
-    "BUY_PRODUCT", "SELL_PRODUCT", "BUY_ANIMAL", "APPLY_SABOTAGE",
+    "BUY_PRODUCT", "SELL_PRODUCT", "BUY_ANIMAL", "APPLY_SABOTAGE", "CLEAR_MINE",
 })
 SERVER_ONLY_PROCESSORS: dict[str, Callable] = {
     "BUY_PRODUCT": process_buy_product,
     "SELL_PRODUCT": process_sell_product,
     "BUY_ANIMAL": process_buy_animal,
     "APPLY_SABOTAGE": process_apply_sabotage,
+    "CLEAR_MINE": process_clear_mine,
 }
 # Bump when server-only actions change (visible in /api/health).
 SHOP_HANDLER_VERSION = "immediate_v7"
@@ -127,6 +129,7 @@ class Match:
                     "SELL_PRODUCT": "Sell",
                     "BUY_ANIMAL": "Animals",
                     "APPLY_SABOTAGE": "Sabotage",
+                    "CLEAR_MINE": "MineDefuse",
                 }
                 label = labels.get(action_type, action_type)
                 self._handle_server_only_immediate(action, processor, label)

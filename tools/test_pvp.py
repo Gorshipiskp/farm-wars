@@ -84,6 +84,30 @@ def test_sabotage_poison_water():
     print(f"  [OK] water 80 -> {tile['water_level']}, paid 20 B")
 
 
+def test_clear_mine_after_mined():
+    print("\n--- PvP: CLEAR_MINE removes MINED flag ---")
+    game, mid, match = _setup_two_player_match()
+    victim_tile = _plant_tile(match.world_state, "p1")
+    tile = next(t for t in match.world_state["map"]["tiles"] if t["tile_id"] == victim_tile)
+    tile.setdefault("flags", []).append("MINED")
+
+    r = game.submit_action(_action(mid, "p1", "CLEAR_MINE", {"tile_id": victim_tile}))
+    cleared = [e for e in r["sync"]["events"] if e["event_type"] == "MINE_CLEARED"]
+    assert cleared, "expected MINE_CLEARED"
+    assert "MINED" not in (tile.get("flags") or [])
+    print("  [OK] MINED cleared on own tile")
+
+
+def test_clear_mine_not_mined_fails():
+    print("\n--- PvP: CLEAR_MINE on clean tile fails ---")
+    game, mid, match = _setup_two_player_match()
+    own = _plant_tile(match.world_state, "p1")
+    r = game.submit_action(_action(mid, "p1", "CLEAR_MINE", {"tile_id": own}))
+    failed = [e for e in r["sync"]["events"] if e["event_type"] == "CLEAR_MINE_FAILED"]
+    assert failed and failed[0]["payload"]["reason"] == "NOT_MINED"
+    print("  [OK] NOT_MINED")
+
+
 def test_sabotage_mine_flag():
     print("\n--- PvP: mine_tile sets MINED flag ---")
     game, mid, match = _setup_two_player_match()
@@ -182,6 +206,8 @@ def main() -> int:
     test_catalog_exposes_sabotages()
     test_sabotage_own_tile_rejected()
     test_sabotage_poison_water()
+    test_clear_mine_after_mined()
+    test_clear_mine_not_mined_fails()
     test_sabotage_mine_flag()
     test_sabotage_disease_on_plant()
     test_sabotage_not_enough_money()

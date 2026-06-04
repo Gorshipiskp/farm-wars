@@ -16,25 +16,12 @@ sys.path.insert(0, ROOT)
 
 from server.game_server import GameServer
 from shared.game_pacing import ticks_for_real_seconds
-
-
-def _action(match_id: str, player_id: str, action_type: str, payload: dict) -> dict:
-    return {
-        "contract_version": "v1",
-        "match_id": match_id,
-        "player_id": player_id,
-        "action": {
-            "contract_version": "v1",
-            "player_id": player_id,
-            "action_type": action_type,
-            "payload": payload,
-            "client_ts": 0,
-        },
-    }
-
-
-def _tiles_for(world: dict, owner: str) -> list[dict]:
-    return [t for t in world["map"]["tiles"] if t.get("owner_player_id") == owner]
+from tools.mp_test_util import (
+    action_envelope as _action,
+    inventory_amount,
+    setup_match,
+    tiles_for as _tiles_for,
+)
 
 
 def _guest_sees_match(game: GameServer, match_id: str) -> dict:
@@ -204,6 +191,128 @@ def test_duplicate_player_ids_per_join():
     print("  [OK] p1..p4 for host + 3 guests")
 
 
+def test_four_players_world_layout():
+    print("\n--- MP: 4 players, map height scales ---")
+    game, mid, match = setup_match(["H", "A", "B", "C"])
+    assert len(match.players) == 4
+    world = match.world_state
+    assert len(world["players"]) == 4
+    owners = {t["owner_player_id"] for t in world["map"]["tiles"]}
+    assert owners == {"p1", "p2", "p3", "p4"}
+    for pid in owners:
+        assert len(_tiles_for(world, pid)) >= 8
+    print("  [OK] 4 farms on expanded map")
+
+
+def test_join_code_case_insensitive():
+    print("\n--- MP: join code trim + case ---")
+    game = GameServer()
+    created = game.create_match("Host")
+    code = created["join_code"]
+    j = game.join_match(f"  {code.lower()}  ", "Guest")
+    assert j["player_id"] == "p2"
+    print("  [OK] lowercase/spaces accepted")
+
+
+def test_roster_lobby_and_running():
+    print("\n--- MP: roster in lobby and after start ---")
+    game = GameServer()
+    created = game.create_match("Host")
+    mid = created["match_id"]
+    game.join_match(created["join_code"], "Guest")
+    lobby = game.get_roster(mid)
+    assert lobby["status"] == "LOBBY"
+    assert lobby["host_player_id"] == "p1"
+    assert len(lobby["players"]) == 2
+
+    game.start_match(mid)
+    running = game.get_roster(mid)
+    assert running["status"] == "RUNNING"
+    assert running["join_code"] == created["join_code"]
+    print("  [OK] roster status LOBBY -> RUNNING")
+
+
+def test_sync_since_tick_filters_events():
+    print("\n--- MP: sync since_tick returns only newer events ---")
+    game, mid, match = setup_match(["Host", "Guest"])
+    sim = game.simulate_tick
+    base = game.get_sync(mid, 0)
+    assert base is not None
+    tick0 = base["tick_id"]
+
+    tile = _tiles_for(match.world_state, "p1")[0]["tile_id"]
+    game.submit_action(_action(mid, "p1", "WATER_PLANT", {"tile_id": tile}))
+    match.process_tick(sim)
+    after = game.get_sync(mid, tick0)
+    assert after is not None
+    assert after["tick_id"] > tick0
+    assert any(e.get("event_type") == "PLANT_WATERED" for e in after["events"])
+
+    stale = game.get_sync(mid, after["tick_id"])
+    assert stale is not None
+    assert stale["events"] == []
+    print("  [OK] since_tick filters historical events")
+
+
+def test_unknown_player_action_rejected():
+    print("\n--- MP: unknown player_id on action ---")
+    game, mid, _match = setup_match(["Host", "Guest"])
+    try:
+        game.submit_action(_action(mid, "p99", "WATER_PLANT", {"tile_id": "p1_t1"}))
+        raise AssertionError("expected ValueError UNKNOWN_PLAYER")
+    except ValueError as exc:
+        assert "UNKNOWN_PLAYER" in str(exc)
+    print("  [OK] UNKNOWN_PLAYER")
+
+
+def test_action_while_lobby_rejected():
+    print("\n--- MP: action before match start ---")
+    game = GameServer()
+    created = game.create_match("Host")
+    mid = created["match_id"]
+    try:
+        game.submit_action(_action(mid, "p1", "WATER_PLANT", {"tile_id": "p1_t1"}))
+        raise AssertionError("expected ValueError MATCH_NOT_RUNNING")
+    except ValueError as exc:
+        assert "MATCH_NOT_RUNNING" in str(exc)
+    print("  [OK] MATCH_NOT_RUNNING in lobby")
+
+
+def test_sabotage_own_tile_rejected():
+    print("\n--- MP: cannot sabotage own tile ---")
+    game, mid, match = setup_match(["Host", "Guest"])
+    p1 = next(p for p in match.world_state["players"] if p["player_id"] == "p1")
+    p1["money_bestiki"] = 200
+    own_tile = _tiles_for(match.world_state, "p1")[0]["tile_id"]
+    result = game.submit_action(_action(mid, "p1", "APPLY_SABOTAGE", {
+        "sabotage_id": "poison_water",
+        "target_tile_id": own_tile,
+    }))
+    failed = [
+        e for e in result["sync"]["events"]
+        if e.get("event_type") == "SABOTAGE_FAILED"
+    ]
+    assert failed
+    assert failed[0]["payload"]["reason"] == "OWN_TILE"
+    print("  [OK] OWN_TILE blocks self-sabotage")
+
+
+def test_per_player_shop_isolation():
+    print("\n--- MP: BUY affects only acting player ---")
+    game, mid, match = setup_match(["Host", "Guest"])
+    p1_before = inventory_amount(match.world_state, "p1", "wheat_seed")
+    p2_before = inventory_amount(match.world_state, "p2", "wheat_seed")
+
+    game.submit_action(_action(mid, "p2", "BUY_PRODUCT", {
+        "product_id": "wheat_seed",
+        "amount": 1,
+    }))
+    world = match.world_state
+    assert inventory_amount(world, "p2", "wheat_seed") == p2_before + 1
+    assert inventory_amount(world, "p1", "wheat_seed") == p1_before
+    print("  [OK] guest buy does not change host inventory")
+
+
 def main() -> int:
     print("=" * 60)
     print("MULTIPLAYER TESTS (2+ players)")
@@ -218,6 +327,14 @@ def main() -> int:
     test_three_player_sabotage_chain()
     test_win_only_one_winner_two_players()
     test_duplicate_player_ids_per_join()
+    test_four_players_world_layout()
+    test_join_code_case_insensitive()
+    test_roster_lobby_and_running()
+    test_sync_since_tick_filters_events()
+    test_unknown_player_action_rejected()
+    test_action_while_lobby_rejected()
+    test_sabotage_own_tile_rejected()
+    test_per_player_shop_isolation()
     print("\n" + "=" * 60)
     print("ALL MULTIPLAYER CHECKS PASSED")
     print("=" * 60)

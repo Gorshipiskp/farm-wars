@@ -210,6 +210,16 @@ export function applyOptimisticAction(
     return next;
   }
 
+  if (type === "CLEAR_MINE") {
+    const tileId = String(payload.tile_id ?? "");
+    const tile = next.map.tiles.find((t) => t.tile_id === tileId);
+    if (!tile || tile.owner_player_id !== playerId) return null;
+    const flags = tile.flags ?? [];
+    if (!flags.includes("MINED")) return null;
+    tile.flags = flags.filter((f) => f !== "MINED");
+    return next;
+  }
+
   if (type === "APPLY_SABOTAGE") {
     const sabId = String(payload.sabotage_id ?? "");
     const sab = catalog?.sabotages?.find((s) => s.sabotage_id === sabId);

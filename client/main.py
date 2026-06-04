@@ -27,6 +27,7 @@ from client.net import (
 from client.session import ClientSession
 from client.sync_poller import SyncPoller
 from client import ui
+from client.minesweeper_ui import run_minesweeper_modal
 
 setup_logging()
 log = logging.getLogger("farm_wars.client")
@@ -507,6 +508,16 @@ class FarmWarsApp:
         enemy_tiles = self._viewed_opponent_tiles(world)
         for index, tile in enumerate(my_tiles):
             if self._tile_rect_at(index, ui.FARM_Y).collidepoint(pos):
+                if "MINED" in (tile.get("flags") or []):
+                    self.selected_tile_id = tile["tile_id"]
+                    result = run_minesweeper_modal(self.screen, self.fonts)
+                    if result == "win":
+                        self._send_action(
+                            "CLEAR_MINE",
+                            {"tile_id": tile["tile_id"]},
+                            "Мина обезврежена!",
+                        )
+                    return
                 self.selected_tile_id = tile["tile_id"]
                 return
         base_y = self._opponent_farm_y(world)

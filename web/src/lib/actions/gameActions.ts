@@ -320,6 +320,10 @@ export async function sendSabotageOnTile(tileId: string, sabotageId: string): Pr
   });
 }
 
+export async function sendClearMine(tileId: string): Promise<void> {
+  await sendAction("CLEAR_MINE", { tile_id: tileId });
+}
+
 export async function sendSabotage(sabotageId: string): Promise<void> {
   const tileId = get(selectedTileId);
   if (!tileId) {
