@@ -98,6 +98,42 @@ def test_clear_mine_after_mined():
     print("  [OK] MINED cleared on own tile")
 
 
+def test_minesweeper_lost_blasts_neighbors():
+    print("\n--- PvP: MINESWEEPER_LOST destroys adjacent plants ---")
+    game, mid, match = _setup_two_player_match()
+    tiles = [t for t in match.world_state["map"]["tiles"] if t["owner_player_id"] == "p1" and t["zone_type"] == "PLANT"]
+    tiles.sort(key=lambda t: t["tile_id"])
+    center = tiles[4]
+    neighbor = tiles[5]
+    center["flags"] = ["MINED"]
+    center["occupant_type"] = "PLANT"
+    center["occupant_id"] = "wheat"
+    neighbor["occupant_type"] = "PLANT"
+    neighbor["occupant_id"] = "corn"
+
+    r = game.submit_action(_action(mid, "p1", "MINESWEEPER_LOST", {"tile_id": center["tile_id"]}))
+    blast = [e for e in r["sync"]["events"] if e["event_type"] == "MINESWEEPER_BLAST"]
+    assert blast
+    assert neighbor["occupant_type"] == "EMPTY"
+    assert "MINED" in (center.get("flags") or [])
+    print("  [OK] neighbor plant cleared, mine remains")
+
+
+def test_place_on_mined_tile_fails():
+    print("\n--- PvP: PLACE_ON_TILE on MINED tile rejected ---")
+    game, mid, match = _setup_two_player_match()
+    tile = _plant_tile(match.world_state, "p1")
+    t = next(x for x in match.world_state["map"]["tiles"] if x["tile_id"] == tile)
+    t.setdefault("flags", []).append("MINED")
+    sim = game.simulate_tick
+    game.submit_action(_action(mid, "p1", "PLACE_ON_TILE", {"tile_id": tile, "plant_id": "wheat"}))
+    match.process_tick(sim)
+    sync = game.get_sync(mid, 0)
+    failed = [e for e in sync["events"] if e.get("event_type") == "PLACE_FAILED"]
+    assert failed and failed[-1]["payload"]["reason"] == "MINED_TILE"
+    print("  [OK] PLACE_FAILED MINED_TILE")
+
+
 def test_clear_mine_not_mined_fails():
     print("\n--- PvP: CLEAR_MINE on clean tile fails ---")
     game, mid, match = _setup_two_player_match()
@@ -207,6 +243,8 @@ def main() -> int:
     test_sabotage_own_tile_rejected()
     test_sabotage_poison_water()
     test_clear_mine_after_mined()
+    test_minesweeper_lost_blasts_neighbors()
+    test_place_on_mined_tile_fails()
     test_clear_mine_not_mined_fails()
     test_sabotage_mine_flag()
     test_sabotage_disease_on_plant()

@@ -9,7 +9,7 @@ import { WATER_LOW_THRESHOLD } from "$lib/game/pacing";
 import { isEmptyPenTile } from "$lib/game/tileGrid";
 import { seedProductIdForPlant } from "$lib/game/catalogData";
 import { inventoryAmount } from "$lib/game/inventory";
-import { findTile, isEnemyTile } from "$lib/game/tiles";
+import { findTile, isEnemyTile, isMinedTile } from "$lib/game/tiles";
 import type { DragPayload } from "./types";
 import type { PlayerState, TileState, WorldState } from "$lib/api/types";
 import { get } from "svelte/store";
@@ -50,7 +50,7 @@ export function canDropOnTile(
   const cat = get(catalog);
 
   if (payload.kind === "seed") {
-    if (!own || !isEmptyPlantTile(tile) || !player) return false;
+    if (!own || isMinedTile(tile) || !isEmptyPlantTile(tile) || !player) return false;
     const seedPid = seedProductIdForPlant(cat, payload.plantId);
     return inventoryAmount(player, seedPid) >= 1;
   }

@@ -12,6 +12,7 @@ engine_cpp/build/
 # Web (Vite)
 web/node_modules/
 web/dist/
+release/out/
 web/.svelte-kit/
 
 # Database (local dev)

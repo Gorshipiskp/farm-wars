@@ -151,7 +151,24 @@ farm-wars/
 
 ---
 
-## Быстрый старт
+## Быстрый старт (exe / один клик)
+
+Сборка portable-версии (Python + Node нужны **только на машине сборки**):
+
+```bash
+bash build-release.sh
+```
+
+или в Windows: двойной клик `build-release.bat` / `powershell -File scripts/build-release.ps1`
+
+Играть из папки `release/out/dist/FarmWars/` → **`Play-FarmWars.bat`**.  
+Подробности: [`RELEASE.md`](RELEASE.md).
+
+Из исходников без exe: `bash play.sh` или `play.bat`.
+
+---
+
+## Быстрый старт (разработка)
 
 ### Требования
 

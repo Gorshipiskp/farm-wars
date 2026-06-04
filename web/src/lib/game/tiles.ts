@@ -26,6 +26,10 @@ export function opponents(world: WorldState | null, myPlayerId: string): PlayerS
   return world.players.filter((p) => p.player_id !== myPlayerId);
 }
 
+export function isMinedTile(tile: TileState | null | undefined): boolean {
+  return (tile?.flags ?? []).includes("MINED");
+}
+
 export function findTile(world: WorldState | null, tileId: string | null): TileState | null {
   if (!world || !tileId) return null;
   return world.map.tiles.find((t) => t.tile_id === tileId) ?? null;

@@ -147,12 +147,12 @@ def test_win_all_mines_flagged():
 
 def test_presets():
     print("\n--- Test 10: Difficulty presets ---")
-    assert Minesweeper.preset("easy") == (9, 9, 10)
-    assert Minesweeper.preset("medium") == (12, 12, 25)
-    assert Minesweeper.preset("hard") == (15, 15, 40)
+    assert Minesweeper.preset("easy") == (7, 7, 6)
+    assert Minesweeper.preset("medium") == (10, 10, 18)
+    assert Minesweeper.preset("hard") == (13, 13, 30)
     w, h, mines = Minesweeper.preset("easy")
     m = Minesweeper(w, h, mines)
-    assert m.width == 9 and m.height == 9 and m.mine_count == 10
+    assert m.width == 7 and m.height == 7 and m.mine_count == 6
     print("  [OK]")
 
 

@@ -4,8 +4,11 @@ import json
 import logging
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import parse_qs, urlparse
+
+from server.static_http import serve_static
 
 if TYPE_CHECKING:
     from server.game_server import GameServer
@@ -17,6 +20,7 @@ MATCH_ID_RE = re.compile(r"^/api/matches/([a-zA-Z0-9-]+)(/.*)?$")
 
 class FarmWarsHandler(BaseHTTPRequestHandler):
     game_server: "GameServer"
+    static_root: Path | None = None
 
     def log_message(self, format, *args):
         log.debug("%s - %s", self.address_string(), format % args)
@@ -132,6 +136,10 @@ class FarmWarsHandler(BaseHTTPRequestHandler):
             })
             return
 
+        static_root = self.static_root
+        if static_root is not None and serve_static(self, static_root):
+            return
+
         self._json_error(404, "NOT_FOUND", f"Unknown path: {path}")
 
     def _json_response(self, status: int, payload: dict) -> None:
@@ -152,9 +160,17 @@ class FarmWarsHandler(BaseHTTPRequestHandler):
         })
 
 
-def serve(game_server: "GameServer", host: str = "127.0.0.1", port: int = 8765) -> ThreadingHTTPServer:
+def serve(
+    game_server: "GameServer",
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    static_root: Path | None = None,
+) -> ThreadingHTTPServer:
     handler = FarmWarsHandler
     handler.game_server = game_server
+    handler.static_root = static_root
     httpd = ThreadingHTTPServer((host, port), handler)
     log.info("HTTP API listening on http://%s:%s", host, port)
+    if static_root is not None:
+        log.info("Web UI: %s", static_root)
     return httpd

@@ -517,6 +517,12 @@ class FarmWarsApp:
                             {"tile_id": tile["tile_id"]},
                             "Мина обезврежена!",
                         )
+                    elif result == "lost":
+                        self._send_action(
+                            "MINESWEEPER_LOST",
+                            {"tile_id": tile["tile_id"]},
+                            "Взрыв сапёра…",
+                        )
                     return
                 self.selected_tile_id = tile["tile_id"]
                 return

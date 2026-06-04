@@ -45,3 +45,20 @@ export function tilesWithinPlantRadius(
 export function isEmptyPenTile(tile: TileState): boolean {
   return tile.zone_type === "ANIMAL" && (!tile.occupant_type || tile.occupant_type === "EMPTY");
 }
+
+/** Plant tiles adjacent on the farm grid (Chebyshev), excluding center. */
+export function adjacentPlantTiles(
+  centerTileId: string,
+  plantTiles: TileState[],
+  cols: number = FARM_COLS,
+): TileState[] {
+  const center = plantGridPosition(centerTileId, plantTiles, cols);
+  if (!center) return [];
+  return plantTiles.filter((t) => {
+    if (t.tile_id === centerTileId) return false;
+    const pos = plantGridPosition(t.tile_id, plantTiles, cols);
+    if (!pos) return false;
+    const dist = Math.max(Math.abs(pos.col - center.col), Math.abs(pos.row - center.row));
+    return dist === 1;
+  });
+}

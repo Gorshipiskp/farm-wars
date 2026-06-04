@@ -2,9 +2,9 @@
 
 import sys
 
-from shared.engine_build_paths import ensure_engine_on_syspath
+from shared.paths import prepend_engine_search_paths
 
-ensure_engine_on_syspath()
+prepend_engine_search_paths()
 
 
 def get_simulate_tick():

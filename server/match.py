@@ -14,7 +14,7 @@ from server.action_enricher import enrich_actions_for_tick
 from server.animals import process_buy_animal
 from server.random_events import maybe_random_event_action
 from server.stipend import apply_stipends
-from server.mine_defuse import process_clear_mine
+from server.mine_defuse import process_clear_mine, process_minesweeper_lost
 from server.sabotage import process_apply_sabotage
 from server.sell import process_sell_product
 from server.shop import process_buy_product
@@ -23,7 +23,8 @@ from server.world_factory import create_initial_world
 log = logging.getLogger("farm_wars.server.match")
 
 SERVER_ONLY_ACTIONS = frozenset({
-    "BUY_PRODUCT", "SELL_PRODUCT", "BUY_ANIMAL", "APPLY_SABOTAGE", "CLEAR_MINE",
+    "BUY_PRODUCT", "SELL_PRODUCT", "BUY_ANIMAL", "APPLY_SABOTAGE",
+    "CLEAR_MINE", "MINESWEEPER_LOST",
 })
 SERVER_ONLY_PROCESSORS: dict[str, Callable] = {
     "BUY_PRODUCT": process_buy_product,
@@ -31,6 +32,7 @@ SERVER_ONLY_PROCESSORS: dict[str, Callable] = {
     "BUY_ANIMAL": process_buy_animal,
     "APPLY_SABOTAGE": process_apply_sabotage,
     "CLEAR_MINE": process_clear_mine,
+    "MINESWEEPER_LOST": process_minesweeper_lost,
 }
 # Bump when server-only actions change (visible in /api/health).
 SHOP_HANDLER_VERSION = "immediate_v7"
@@ -130,6 +132,7 @@ class Match:
                     "BUY_ANIMAL": "Animals",
                     "APPLY_SABOTAGE": "Sabotage",
                     "CLEAR_MINE": "MineDefuse",
+                    "MINESWEEPER_LOST": "MineBlast",
                 }
                 label = labels.get(action_type, action_type)
                 self._handle_server_only_immediate(action, processor, label)
@@ -149,17 +152,23 @@ class Match:
         if self.world_state is None:
             raise ValueError("NO_WORLD_STATE")
         tick_id = self.world_state.get("tick_id", 0)
-        event = processor(action, self.world_state, self.catalog, tick_id)
-        events = [event] if event else []
+        result = processor(action, self.world_state, self.catalog, tick_id)
+        if result is None:
+            events: list[dict] = []
+        elif isinstance(result, list):
+            events = result
+        else:
+            events = [result]
         log.info(
             "%s immediate tick=%s player=%s -> %s",
             label,
             tick_id,
             action.get("player_id"),
-            event.get("event_type") if event else "none",
+            [e.get("event_type") for e in events] if events else "none",
         )
-        if event and event.get("event_type") == "CONTRACT_ERROR":
-            log.warning("%s CONTRACT_ERROR: %s", label, event.get("payload"))
+        for event in events:
+            if event.get("event_type") == "CONTRACT_ERROR":
+                log.warning("%s CONTRACT_ERROR: %s", label, event.get("payload"))
         self._unacked_events.extend(events)
         self._push_sync(events, bump_tick=False)
 

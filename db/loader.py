@@ -8,8 +8,9 @@ import os
 import sqlite3
 from dataclasses import dataclass, field
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEFAULT_DB_PATH = os.path.join(ROOT, "db", "farm_wars.db")
+from shared.paths import default_db_path
+
+DEFAULT_DB_PATH = default_db_path()
 
 
 @dataclass(frozen=True)

@@ -52,9 +52,9 @@ DEFAULT_MINES = 10
 
 # Преступы сложности (width, height, mines)
 PRESETS = {
-    "easy": (9, 9, 10),
-    "medium": (12, 12, 25),
-    "hard": (15, 15, 40),
+    "easy": (7, 7, 6),
+    "medium": (10, 10, 18),
+    "hard": (13, 13, 30),
 }
 
 

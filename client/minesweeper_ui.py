@@ -55,13 +55,16 @@ def run_minesweeper_modal(screen, fonts, *, title: str = "Сапёр") -> str:
     grid_y = panel.y + 56
 
     show_loss_until = 0.0
+    pending_lost_return = False
     clock = pygame.time.Clock()
 
     while True:
         now = time.time()
         if show_loss_until and now >= show_loss_until:
-            game.reset()
             show_loss_until = 0.0
+            if pending_lost_return:
+                return "lost"
+            game.reset()
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -88,6 +91,7 @@ def run_minesweeper_modal(screen, fonts, *, title: str = "Сапёр") -> str:
                         return "win"
                     if result == ClickResult.LOST:
                         show_loss_until = now + 1.5
+                        pending_lost_return = True
                 elif event.button == 3:
                     game.toggle_flag(gx, gy)
                     if game.is_won():

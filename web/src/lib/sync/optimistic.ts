@@ -3,7 +3,7 @@ import { seedProductIdForPlant } from "$lib/game/catalogData";
 import { FARM_COLS, WATERING_CAN_RADIUS } from "$lib/game/constants";
 import { inventoryAmount, isSellableProduct } from "$lib/game/inventory";
 import { sellUnitPrice } from "$lib/game/prices";
-import { tilesWithinPlantRadius } from "$lib/game/tileGrid";
+import { adjacentPlantTiles, tilesWithinPlantRadius } from "$lib/game/tileGrid";
 import { plantTilesForOwner } from "$lib/game/tiles";
 import { TICKS_PER_SECOND } from "$lib/game/pacing";
 import type { PlayerAction } from "$lib/api/types";
@@ -120,6 +120,10 @@ export function applyOptimisticAction(
 
   if (type === "PLACE_ON_TILE") {
     const tileId = String(payload.tile_id ?? "");
+    const placeTile = next.map.tiles.find((t) => t.tile_id === tileId);
+    if (placeTile && (placeTile.flags ?? []).includes("MINED")) {
+      return null;
+    }
     const plantId = String(payload.plant_id ?? "");
     const seedPid = seedProductIdForPlant(catalog, plantId);
     if (!takeInv(player, seedPid, 1)) return null;
@@ -207,6 +211,25 @@ export function applyOptimisticAction(
     const wallSec = (recipe as { production_time_sec?: number }).production_time_sec ?? 30;
     factory.active_recipe_id = recipeId;
     factory.remaining_time_sec = Math.max(1, Math.floor(wallSec * TICKS_PER_SECOND));
+    return next;
+  }
+
+  if (type === "MINESWEEPER_LOST") {
+    const tileId = String(payload.tile_id ?? "");
+    const plants = plantTilesForOwner(next, playerId);
+    for (const neighbor of adjacentPlantTiles(tileId, plants, FARM_COLS)) {
+      if (neighbor.occupant_type === "PLANT") {
+        updateTile(next, neighbor.tile_id, {
+          occupant_type: "EMPTY",
+          occupant_id: null,
+          health: null,
+          water_level: null,
+          growth_elapsed_sec: null,
+          growth_time_sec: null,
+          water_decay_per_tick: null,
+        });
+      }
+    }
     return next;
   }
 

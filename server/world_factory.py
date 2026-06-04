@@ -7,8 +7,9 @@ import os
 from db.loader import GameContentCatalog
 from server.plant_util import resolve_plant_id
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FIXTURE_WORLD = os.path.join(ROOT, "fixtures", "world_state", "minimal_world.json")
+from shared.paths import fixture_world_path
+
+FIXTURE_WORLD = str(fixture_world_path())
 
 
 def _load_fixture_template() -> dict:

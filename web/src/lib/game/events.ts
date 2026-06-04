@@ -122,6 +122,16 @@ export function humanizeEvent(ev: GameEvent): string | null {
   if (et === "MINE_CLEARED") {
     return "Мина обезврежена!";
   }
+  if (et === "MINESWEEPER_BLAST") {
+    const n = (pl.destroyed_tile_ids as string[] | undefined)?.length ?? 0;
+    if (n > 0) {
+      return `Взрыв сапёра — погибло растений: ${n}`;
+    }
+    return "Взрыв сапёра — соседние грядки в зоне поражения";
+  }
+  if (et === "PLACE_FAILED" && pl.reason === "MINED_TILE") {
+    return "Нельзя сажать на заминированную грядку";
+  }
   if (et === "CLEAR_MINE_FAILED") {
     const reasons: Record<string, string> = {
       NOT_MINED: "здесь нет мины",
@@ -183,6 +193,8 @@ function shouldSkipEvent(ev: GameEvent, myPlayerId: string): boolean {
       "ANIMAL_PURCHASE_FAILED",
       "SABOTAGE_FAILED",
       "CLEAR_MINE_FAILED",
+      "MINESWEEPER_LOST_FAILED",
+      "PLACE_FAILED",
     ]);
     if (skipTypes.has(ev.event_type ?? "")) return true;
   }

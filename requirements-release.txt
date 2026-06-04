@@ -1,0 +1,2 @@
+# Build FarmWars.exe (see scripts/build-release.sh)
+pyinstaller>=6.3.0

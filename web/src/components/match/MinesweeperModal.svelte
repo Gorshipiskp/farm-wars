@@ -5,16 +5,20 @@
   interface Props {
     tileLabel?: string;
     onWin: () => void;
+    onLoss: () => void;
     onClose: () => void;
   }
 
-  let { tileLabel = "грядка", onWin, onClose }: Props = $props();
+  const CELL_PX = 34;
+
+  let { tileLabel = "грядка", onWin, onLoss, onClose }: Props = $props();
 
   const [w, h, mines] = Minesweeper.preset("easy");
   let game = $state(new Minesweeper(w, h, mines));
   let board = $state<BoardCell[][]>(game.getBoard());
   let showLoss = $state(false);
   let lossTimer: ReturnType<typeof setTimeout> | null = null;
+  let lossReported = $state(false);
 
   const flagged = $derived(game.getFlaggedCount());
 
@@ -22,21 +26,8 @@
     board = game.getBoard();
   }
 
-  function cellAt(clientX: number, clientY: number, gridEl: HTMLElement): [number, number] | null {
-    const rect = gridEl.getBoundingClientRect();
-    const size = rect.width / game.width;
-    if (size <= 0) return null;
-    const x = Math.floor((clientX - rect.left) / size);
-    const y = Math.floor((clientY - rect.top) / size);
-    if (x < 0 || y < 0 || x >= game.width || y >= game.height) return null;
-    return [x, y];
-  }
-
-  function onLeftClick(e: MouseEvent, gridEl: HTMLElement): void {
+  function handleLeft(x: number, y: number): void {
     if (showLoss) return;
-    const pos = cellAt(e.clientX, e.clientY, gridEl);
-    if (!pos) return;
-    const [x, y] = pos;
     const result = game.click(x, y);
     refresh();
     if (result === "win") {
@@ -45,22 +36,24 @@
     }
     if (result === "lost") {
       showLoss = true;
+      if (!lossReported) {
+        lossReported = true;
+        onLoss();
+      }
       if (lossTimer) clearTimeout(lossTimer);
       lossTimer = setTimeout(() => {
         game.reset();
         showLoss = false;
+        lossReported = false;
         refresh();
         lossTimer = null;
       }, 1500);
     }
   }
 
-  function onRightClick(e: MouseEvent, gridEl: HTMLElement): void {
-    e.preventDefault();
+  function handleRight(x: number, y: number): void {
     if (showLoss) return;
-    const pos = cellAt(e.clientX, e.clientY, gridEl);
-    if (!pos) return;
-    game.toggleFlag(pos[0], pos[1]);
+    game.toggleFlag(x, y);
     refresh();
     if (game.isWon()) {
       onWin();
@@ -77,6 +70,7 @@
       e.preventDefault();
       game.reset();
       showLoss = false;
+      lossReported = false;
       if (lossTimer) {
         clearTimeout(lossTimer);
         lossTimer = null;
@@ -125,28 +119,34 @@
     <p class="stats">🚩 {flagged} / {mines} · ЛКМ — открыть · ПКМ — флаг · R — заново · Esc — выход</p>
 
     {#if showLoss}
-      <p class="loss">Взрыв! Новая попытка через мгновение…</p>
+      <p class="loss">Взрыв! Соседние грядки пострадали. Новая попытка…</p>
     {/if}
 
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="grid"
-      style="--cols: {game.width}"
-      oncontextmenu={(e) => onRightClick(e, e.currentTarget as HTMLElement)}
-      onclick={(e) => onLeftClick(e, e.currentTarget as HTMLElement)}
+      style="--cell: {CELL_PX}px; --cols: {game.width}"
+      role="grid"
+      aria-label="Поле сапёра"
     >
       {#each board as row, y (y)}
         {#each row as cell, x (`${y}-${x}`)}
-          <div
+          <button
+            type="button"
             class="cell {numberClass(cell.adjacent_mines)}"
             class:revealed={cell.is_revealed}
             class:flagged={cell.is_flagged && !cell.is_revealed}
             class:mine={cell.is_mine && cell.is_revealed}
             class:exploded={cell.is_exploded}
             class:empty={cell.is_revealed && cell.adjacent_mines === 0}
+            onclick={() => handleLeft(x, y)}
+            oncontextmenu={(e) => {
+              e.preventDefault();
+              handleRight(x, y);
+            }}
+            aria-label="Клетка {x + 1},{y + 1}"
           >
             {cellLabel(cell)}
-          </div>
+          </button>
         {/each}
       {/each}
     </div>
@@ -222,30 +222,36 @@
 
   .grid {
     display: grid;
-    grid-template-columns: repeat(var(--cols), 1fr);
+    grid-template-columns: repeat(var(--cols), var(--cell));
     gap: 2px;
-    width: min(92vw, 420px);
-    aspect-ratio: 1;
+    width: fit-content;
+    margin: 0 auto;
     user-select: none;
     touch-action: manipulation;
   }
 
   .cell {
+    box-sizing: border-box;
+    width: var(--cell);
+    height: var(--cell);
+    padding: 0;
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: 700;
-    font-size: clamp(0.65rem, 2.8vw, 1rem);
+    font-size: 0.85rem;
+    line-height: 1;
     background: #9aa3ad;
     border: 1px solid #6b7280;
     border-radius: 3px;
     color: #1a1a1a;
-    min-height: 0;
+    cursor: pointer;
   }
 
   .cell.revealed {
     background: #e8e4d8;
     border-color: #c4bfb3;
+    cursor: default;
   }
 
   .cell.revealed.empty {

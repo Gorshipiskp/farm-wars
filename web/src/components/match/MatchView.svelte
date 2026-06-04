@@ -18,6 +18,7 @@
     sendRecipe,
     sendSell,
     sendClearMine,
+    sendMinesweeperLost,
     sendSabotage,
   } from "$lib/actions/gameActions";
   import { plantIds, winProductId } from "$lib/game/catalogData";
@@ -100,6 +101,12 @@
     await sendClearMine(tileId);
   }
 
+  async function onMinesweeperLoss(): Promise<void> {
+    const tileId = defuseTileId;
+    if (!tileId) return;
+    await sendMinesweeperLost(tileId);
+  }
+
   function onWindowDragOver(e: DragEvent) {
     if (get(activeDrag)?.kind !== "watering_can") return;
     e.preventDefault();
@@ -147,6 +154,7 @@
   <MinesweeperModal
     tileLabel={defuseTile?.tile_id ?? "грядка"}
     onWin={() => void onMinesweeperWin()}
+    onLoss={() => void onMinesweeperLoss()}
     onClose={closeMinesweeper}
   />
 {/if}

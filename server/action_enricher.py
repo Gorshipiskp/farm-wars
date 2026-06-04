@@ -46,7 +46,7 @@ def enrich_actions_for_tick(
         action_type = action_copy.get("action_type")
 
         if action_type == "PLACE_ON_TILE":
-            event = _enrich_place_on_tile(action_copy, catalog, tick_id)
+            event = _enrich_place_on_tile(action_copy, world_state, catalog, tick_id)
             if event is not None:
                 pre_events.append(event)
                 continue
@@ -214,8 +214,22 @@ def _expand_water_area(
     return expanded
 
 
-def _enrich_place_on_tile(action: dict, catalog: GameContentCatalog, tick_id: int) -> dict | None:
+def _enrich_place_on_tile(
+    action: dict,
+    world_state: dict,
+    catalog: GameContentCatalog,
+    tick_id: int,
+) -> dict | None:
     payload = action.setdefault("payload", {})
+    tile_id = payload.get("tile_id")
+    tile = find_tile(world_state, tile_id) if tile_id else None
+    if tile is not None and "MINED" in (tile.get("flags") or []):
+        return make_event(tick_id, "PLACE_FAILED", {
+            "player_id": action.get("player_id"),
+            "tile_id": tile_id,
+            "reason": "MINED_TILE",
+        })
+
     plant_id = payload.get("plant_id")
     plant = catalog.plants.get(plant_id) if plant_id else None
 

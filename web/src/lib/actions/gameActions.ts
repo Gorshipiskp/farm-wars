@@ -7,7 +7,7 @@ import { factoryForRecipe, factoryLabel } from "$lib/game/factories";
 import { inventoryAmount, isSellableProduct } from "$lib/game/inventory";
 import { productLabel, seedLabelFromPlantId } from "$lib/game/labels";
 import { FARM_COLS, WATERING_CAN_RADIUS } from "$lib/game/constants";
-import { findTile, isEnemyTile, plantTilesForOwner } from "$lib/game/tiles";
+import { findTile, isEnemyTile, isMinedTile, plantTilesForOwner } from "$lib/game/tiles";
 import { tilesWithinPlantRadius } from "$lib/game/tileGrid";
 import { matchFinished, selectedTileId, worldState } from "$lib/stores/game";
 import {
@@ -137,6 +137,11 @@ export async function sendWaterArea(centerTileId: string): Promise<void> {
 export async function sendPlantOnTile(tileId: string, plantId?: string): Promise<void> {
   selectedTileId.set(tileId);
   const world = get(worldState);
+  const tile = findTile(world, tileId);
+  if (isMinedTile(tile)) {
+    pushToast("Сначала разминируй грядку (сапёр)", "warn");
+    return;
+  }
   const player = myPlayer(world);
   const pid = plantId ?? get(selectedPlantId);
   const cat = get(catalog);
@@ -322,6 +327,10 @@ export async function sendSabotageOnTile(tileId: string, sabotageId: string): Pr
 
 export async function sendClearMine(tileId: string): Promise<void> {
   await sendAction("CLEAR_MINE", { tile_id: tileId });
+}
+
+export async function sendMinesweeperLost(tileId: string): Promise<void> {
+  await sendAction("MINESWEEPER_LOST", { tile_id: tileId });
 }
 
 export async function sendSabotage(sabotageId: string): Promise<void> {
