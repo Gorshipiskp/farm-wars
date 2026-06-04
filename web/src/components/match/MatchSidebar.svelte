@@ -8,6 +8,7 @@
   import DraggableChip from "$components/shared/DraggableChip.svelte";
   import { sendSabotage } from "$lib/actions/gameActions";
   import { winProductId } from "$lib/game/catalogData";
+  import { recipeHintForTarget } from "$lib/game/winGoal";
   import { inventoryAmount } from "$lib/game/inventory";
   import { activeDrag } from "$lib/stores/drag";
   import type { PlayerState, WorldState } from "$lib/api/types";
@@ -30,16 +31,7 @@
   const haveGoal = $derived(inventoryAmount(player, target));
   const sabotages = $derived($catalog?.sabotages ?? []);
 
-  const RECIPE_HINTS: Record<string, string> = {
-    bread: "Мука ×2, пшеница ×1",
-    cake: "Мука ×3, молоко ×2",
-    pie: "Мука ×2, яйцо ×2, пшеница ×1",
-    soup: "Помидор ×2, картофель ×1, морковь ×1",
-    omelette: "Яйцо ×3, молоко ×1",
-    cheese: "Молоко ×2",
-    butter: "Молоко ×1, мука ×1",
-    sausage: "Свинина ×2, мука ×1",
-  };
+  const recipeHint = $derived(recipeHintForTarget($catalog, target));
 
   const sidebarTabs = $derived([
     { id: "play", label: "Действия" },
@@ -64,7 +56,7 @@
   <GoalProgress
     targetProductId={target}
     have={haveGoal}
-    recipeHint={RECIPE_HINTS[target] ?? null}
+    recipeHint={recipeHint}
   />
 
   <TabBar

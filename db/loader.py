@@ -112,17 +112,14 @@ class GameContentCatalog:
 
     def default_win_product_id(self) -> str:
         """
-        Match win target from env.
+        Fallback win target if random pool is empty.
 
-        FARM_WARS_WIN_PRODUCT — override (e.g. bread, cake).
-        FARM_WARS_DEV=1 — default cake (harder to finish while testing animals).
+        Per-match goals use server.win_targets.pick_match_win_target().
+        FARM_WARS_WIN_PRODUCT — force one product for all new matches.
         """
         override = os.environ.get("FARM_WARS_WIN_PRODUCT", "").strip()
         if override:
             return override
-        dev = os.environ.get("FARM_WARS_DEV", "").lower() in ("1", "true", "yes")
-        if dev:
-            return "cake"
         return "bread"
 
 

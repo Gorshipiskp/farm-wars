@@ -107,5 +107,6 @@ def catalog_for_client(catalog: GameContentCatalog) -> dict:
         "animals": animals,
         "sabotages": sabotages,
         "recipes": recipes,
-        "win_product_id": catalog.default_win_product_id(),
+        "win_product_id": None,
+        "win_product_note": "Цель матча выбирается случайно при создании комнаты (см. roster).",
     }

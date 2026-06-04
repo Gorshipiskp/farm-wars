@@ -79,6 +79,10 @@ export interface JoinMatchResponse {
 export interface RosterResponse {
   players: { player_id: string; display_name: string }[];
   host_player_id?: string;
+  status?: string;
+  target_product_id?: string;
+  target_display_name?: string;
+  recipe_hint?: string | null;
 }
 
 export interface SyncResponse {

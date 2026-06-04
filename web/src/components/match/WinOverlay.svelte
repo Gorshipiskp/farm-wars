@@ -6,13 +6,23 @@
     winnerId: string;
     myPlayerId: string;
     targetProductId: string;
+    onLeave: () => void;
   }
 
-  let { winnerId, myPlayerId, targetProductId }: Props = $props();
+  let { winnerId, myPlayerId, targetProductId, onLeave }: Props = $props();
+
+  function onKeydown(e: KeyboardEvent): void {
+    if (e.key === "Escape" || e.key === "Enter") {
+      e.preventDefault();
+      onLeave();
+    }
+  }
 
   const won = $derived(winnerId === myPlayerId);
   const emoji = $derived(productEmoji(targetProductId));
 </script>
+
+<svelte:window onkeydown={onKeydown} />
 
 <div class="overlay" role="dialog" aria-modal="true" aria-labelledby="win-title">
   <div class="box" class:won>
@@ -28,6 +38,10 @@
       <p class="sub">Победитель</p>
       <p class="prize loser"><strong>{winnerId}</strong></p>
     {/if}
+    <button type="button" class="btn-lobby" onclick={onLeave}>
+      В лобби
+    </button>
+    <p class="hint">Esc или Enter — тоже в меню</p>
   </div>
 </div>
 
@@ -120,5 +134,29 @@
   .prize.loser strong {
     font-size: 1.35rem;
     color: var(--panel-header);
+  }
+
+  .btn-lobby {
+    margin-top: 1.25rem;
+    width: 100%;
+    padding: 0.65rem 1rem;
+    border: none;
+    border-radius: 12px;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    color: #fff;
+    background: linear-gradient(180deg, var(--accent-hover), var(--accent));
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
+  }
+
+  .btn-lobby:hover {
+    filter: brightness(1.05);
+  }
+
+  .hint {
+    margin: 0.5rem 0 0;
+    font-size: 0.75rem;
+    color: var(--text-soft);
   }
 </style>

@@ -8,7 +8,15 @@ import { startSyncPoller, stopSyncPoller } from "$lib/sync/poller";
 import { selectedTileId, syncEnabled } from "$lib/stores/game";
 import { awaitingMatchStart } from "$lib/stores/lobby";
 import { selectedPlantId, viewOpponentId } from "$lib/stores/matchUi";
-import { catalog, screen, statusMessage } from "$lib/stores/session";
+import {
+  catalog,
+  isHost,
+  matchId,
+  myJoinCode,
+  playerId,
+  screen,
+  statusMessage,
+} from "$lib/stores/session";
 import { pushToast } from "$lib/stores/toasts";
 
 async function refreshCatalogFromServer(): Promise<void> {
@@ -40,11 +48,15 @@ export function leaveMatch(): void {
   stopSyncPoller();
   discardLiveState();
   awaitingMatchStart.set(false);
+  matchId.set("");
+  playerId.set("");
+  isHost.set(false);
+  myJoinCode.set("");
   selectedTileId.set(null);
   viewOpponentId.set(null);
   screen.set("lobby");
-  statusMessage.set("Вышел в меню");
-  pushToast("Вышел в меню", "info");
+  statusMessage.set("В лобби — создай комнату или введи код");
+  pushToast("Вышел в лобби", "info");
 }
 
 export async function hostStartMatch(matchIdVal: string): Promise<void> {

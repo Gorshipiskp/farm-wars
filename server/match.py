@@ -18,6 +18,11 @@ from server.mine_defuse import process_clear_mine, process_minesweeper_lost
 from server.sabotage import process_apply_sabotage
 from server.sell import process_sell_product
 from server.shop import process_buy_product
+from server.win_targets import (
+    display_name_for_product,
+    pick_match_win_target,
+    recipe_hint_for_product,
+)
 from server.world_factory import create_initial_world
 
 log = logging.getLogger("farm_wars.server.match")
@@ -65,6 +70,7 @@ class Match:
         self.status = self.LOBBY
         self.players: list[MatchPlayer] = []
         self.host_player_id: str | None = None
+        self.target_win_product_id = pick_match_win_target(catalog, match_id, join_code)
         self.world_state: dict | None = None
         self.action_queue: deque[dict] = deque()
         self.sync_history: list[dict] = []
@@ -86,6 +92,13 @@ class Match:
                     }
                     for p in self.players
                 ],
+                "target_product_id": self.target_win_product_id,
+                "target_display_name": display_name_for_product(
+                    self.catalog, self.target_win_product_id,
+                ),
+                "recipe_hint": recipe_hint_for_product(
+                    self.catalog, self.target_win_product_id,
+                ),
             }
 
     def add_player(self, display_name: str) -> str:
@@ -106,7 +119,10 @@ class Match:
                 raise ValueError("NOT_ENOUGH_PLAYERS")
             player_tuples = [(p.player_id, p.display_name) for p in self.players]
             self.world_state = create_initial_world(
-                self.match_id, player_tuples, self.catalog
+                self.match_id,
+                player_tuples,
+                self.catalog,
+                win_product_id=self.target_win_product_id,
             )
             self.status = self.RUNNING
             self._push_sync([], bump_tick=False)

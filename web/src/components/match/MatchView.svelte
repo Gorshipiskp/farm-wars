@@ -164,6 +164,7 @@
     winnerId={winnerId}
     myPlayerId={$playerId}
     targetProductId={targetProduct}
+    onLeave={leaveMatch}
   />
 {/if}
 

@@ -21,13 +21,14 @@ def create_initial_world(
         match_id: str,
         players: list[tuple[str, str]],
         catalog: GameContentCatalog,
+        win_product_id: str | None = None,
 ) -> dict:
     """
     players: list of (player_id, display_name)
     Each player gets a farm slice based on minimal_world fixture layout.
     """
     template = _load_fixture_template()
-    win_product = catalog.default_win_product_id()
+    win_product = win_product_id or catalog.default_win_product_id()
     starter_inventory = [
         {"product_id": "wheat_seed", "amount": 3},
         {"product_id": "corn_seed", "amount": 1},

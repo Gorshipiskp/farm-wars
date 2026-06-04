@@ -4,6 +4,10 @@
   import { api, parseServerBase } from "$lib/api/client";
   import { ApiError } from "$lib/api/errors";
   import { LOBBY_HEALTH_POLL_MS, LOBBY_POLL_MS } from "$lib/game/constants";
+  import {
+    loadServerConnection,
+    saveServerConnection,
+  } from "$lib/storage/serverConnection";
   import { enterMatch, hostStartMatch } from "$lib/match/lifecycle";
   import { awaitingMatchStart } from "$lib/stores/lobby";
   import { pushToast } from "$lib/stores/toasts";
@@ -22,6 +26,11 @@
   } from "$lib/stores/session";
 
   let roster = $state<{ player_id: string; display_name: string }[]>([]);
+  let matchGoal = $state<{
+    target_product_id?: string;
+    target_display_name?: string;
+    recipe_hint?: string | null;
+  } | null>(null);
   let hostPlayerId = $state("");
   let busy = $state(false);
   let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -52,6 +61,7 @@
       const health = await api.health();
       catalog.set(health.catalog ?? null);
       serverConnected.set(true);
+      saveServerConnection(get(serverHost), get(serverPort));
 
       const detail = healthStatusText(health);
       const inRoomNow = !!get(matchId);
@@ -122,6 +132,13 @@
     const r = await api.pollRoster($matchId);
     roster = r.players ?? [];
     hostPlayerId = r.host_player_id ?? "";
+    if (r.target_product_id) {
+      matchGoal = {
+        target_product_id: r.target_product_id,
+        target_display_name: r.target_display_name,
+        recipe_hint: r.recipe_hint,
+      };
+    }
   }
 
   async function startMatch() {
@@ -168,6 +185,10 @@
   }
 
   onMount(() => {
+    const saved = loadServerConnection();
+    serverHost.set(saved.host);
+    serverPort.set(saved.port);
+    api.setBaseUrl(parseServerBase(saved.host, saved.port));
     void checkServerConnection();
     healthTimer = setInterval(
       () => void checkServerConnection(),
@@ -314,6 +335,15 @@
         <h2 class="card-title"><span class="ico">👥</span> В комнате</h2>
         <span class="count">{roster.length}</span>
       </div>
+      {#if matchGoal?.target_product_id}
+        <div class="match-goal">
+          <strong>Цель матча:</strong>
+          {matchGoal.target_display_name ?? matchGoal.target_product_id}
+          {#if matchGoal.recipe_hint}
+            <span class="goal-recipe">({matchGoal.recipe_hint})</span>
+          {/if}
+        </div>
+      {/if}
       <ul class="players">
         {#each roster as p (p.player_id)}
           <li
@@ -745,6 +775,25 @@
 
   .roster-head .card-title {
     margin: 0;
+  }
+
+  .match-goal {
+    margin: 0 0 0.65rem;
+    padding: 0.55rem 0.65rem;
+    background: linear-gradient(135deg, #fff9ee, #f5ebe0);
+    border: 1px solid #e0d0b8;
+    border-radius: 10px;
+    font-size: 0.88rem;
+    line-height: 1.4;
+    color: var(--panel-header);
+  }
+
+  .goal-recipe {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--text-soft);
   }
 
   .count {
